@@ -1,0 +1,216 @@
+:root {
+  --bg: #0b0d12;
+  --panel: #151922;
+  --panel-2: #1d2230;
+  --fg: #e6e9f0;
+  --muted: #8b93a7;
+  --accent: #6aa8ff;
+  --border: #2a3142;
+  --cat-reactive-nonmetal: #3f8f5a;
+  --cat-noble-gas: #6b5bb5;
+  --cat-alkali-metal: #b55b4a;
+  --cat-alkaline-earth-metal: #b5884a;
+  --cat-metalloid: #4a8fb5;
+  --cat-halogen: #4ab5a3;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+body {
+  display: flex;
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------------- stage */
+#stage {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  background: #000;
+}
+body.mode-white #stage { background: #fff; }
+
+#stage canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+#gl { cursor: grab; touch-action: none; }
+#gl.dragging { cursor: grabbing; }
+#overlay { pointer-events: none; }
+
+#status {
+  position: absolute;
+  right: 12px;
+  top: 10px;
+  font: 12px ui-monospace, monospace;
+  color: rgba(255, 255, 255, 0.6);
+  pointer-events: none;
+}
+body.mode-white #status { color: rgba(0, 0, 0, 0.6); }
+
+#error {
+  position: absolute;
+  inset: 40% 10% auto;
+  padding: 16px;
+  background: #3a1d1d;
+  border: 1px solid #a33;
+  white-space: pre-wrap;
+  font-family: ui-monospace, monospace;
+}
+
+/* ---------------------------------------------------------------- panel */
+#panel {
+  width: 340px;
+  flex: none;
+  overflow-y: auto;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+h1 { font-size: 18px; margin: 0; }
+h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin: 0 0 6px;
+}
+.sub { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+
+footer { color: var(--muted); font-size: 11px; margin-top: auto; }
+
+/* ---------------------------------------------------------------- periodic table */
+.ptable {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  grid-template-rows: repeat(2, auto);
+  gap: 3px;
+}
+.pt-cell {
+  position: relative;
+  aspect-ratio: 1;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #fff;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+  opacity: 0.8;
+}
+.pt-cell:hover { opacity: 1; }
+.pt-cell.active { opacity: 1; border-color: #fff; box-shadow: 0 0 0 1px #fff; }
+.pt-z { position: absolute; top: 2px; left: 4px; font-size: 9px; opacity: 0.85; }
+.pt-sym { font-weight: 600; font-size: 15px; }
+
+.cat-reactive-nonmetal { background: var(--cat-reactive-nonmetal); }
+.cat-noble-gas { background: var(--cat-noble-gas); }
+.cat-alkali-metal { background: var(--cat-alkali-metal); }
+.cat-alkaline-earth-metal { background: var(--cat-alkaline-earth-metal); }
+.cat-metalloid { background: var(--cat-metalloid); }
+.cat-halogen { background: var(--cat-halogen); }
+
+/* ---------------------------------------------------------------- element card */
+.card {
+  display: flex;
+  gap: 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+}
+.card-symbol {
+  width: 84px;
+  height: 96px;
+  flex: none;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  color: #fff;
+}
+.card-z { position: absolute; top: 4px; left: 7px; font-size: 12px; }
+.card-sym { font-size: 38px; font-weight: 700; line-height: 1; }
+.card-mass { font-size: 11px; margin-top: 6px; opacity: 0.9; }
+.card-info { flex: 1; min-width: 0; }
+.card-name { font-size: 17px; font-weight: 600; }
+.card-cat { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+.info-row { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
+.info-row .k { color: var(--muted); }
+
+/* ---------------------------------------------------------------- legend */
+#legend { width: 100%; border-collapse: collapse; font-size: 13px; }
+#legend th { font-weight: 500; color: var(--muted); text-align: left; font-size: 11px; }
+#legend td, #legend th { padding: 3px 4px; }
+#legend .num { text-align: right; font-variant-numeric: tabular-nums; }
+#legend tr.empty { opacity: 0.35; }
+#legend .pips { letter-spacing: -2px; }
+.swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  vertical-align: middle;
+}
+
+/* ---------------------------------------------------------------- radial inset */
+.h2-unit { text-transform: none; letter-spacing: 0; font-size: 11px; margin-left: 6px; }
+.radial-legend { display: flex; gap: 12px; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+.rl-item i, .radial-tip i {
+  display: inline-block; width: 12px; height: 2px; border-radius: 1px;
+  vertical-align: middle; margin-right: 5px;
+}
+.radial-wrap { position: relative; }
+#radial { display: block; width: 100%; height: 140px; cursor: crosshair; }
+.radial-tip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 11px;
+  color: var(--fg);
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+.radial-tip .tt-head { color: var(--muted); margin-bottom: 2px; }
+.radial-tip b { font-weight: 500; margin-left: 10px; float: right; font-variant-numeric: tabular-nums; }
+
+/* ---------------------------------------------------------------- controls */
+.slider { display: block; margin-bottom: 8px; }
+.slider span { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+.slider output { color: var(--fg); font-variant-numeric: tabular-nums; }
+.slider input { width: 100%; accent-color: var(--accent); }
+.row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; font-size: 13px; }
+.row > span { color: var(--muted); font-size: 12px; }
+.row .hint { color: var(--muted); font-size: 11px; margin-left: -8px; }
+.buttons button {
+  flex: 1;
+  background: var(--panel-2);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 5px 8px;
+  font: inherit;
+  cursor: pointer;
+}
+.buttons button:hover:not(:disabled) { border-color: var(--accent); }
+.buttons button:disabled { opacity: 0.4; cursor: default; }
+input[type=checkbox], input[type=radio] { accent-color: var(--accent); }

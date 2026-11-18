@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Electron Orbitals</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <main id="stage">
+    <canvas id="gl"></canvas>
+    <canvas id="overlay"></canvas>
+    <div id="error" hidden></div>
+    <div id="status"></div>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>Electron Orbitals</h1>
+      <p class="sub">Each frame samples electron detections along every ray from |ψ|².</p>
+    </header>
+
+    <section>
+      <div id="ptable" class="ptable"></div>
+    </section>
+
+    <section id="element-card" class="card"></section>
+
+    <section>
+      <h2>Orbitals</h2>
+      <table id="legend">
+        <thead>
+          <tr><th></th><th></th><th>Orbital</th><th>e⁻</th><th class="num">Z<sub>eff</sub></th><th class="num" title="RMS radius √⟨r²⟩">r<sub>rms</sub> pm</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Radial density <span class="h2-unit">e⁻ per a₀ vs r (pm)</span></h2>
+      <div id="radial-legend" class="radial-legend"></div>
+      <div class="radial-wrap">
+        <canvas id="radial" role="img"
+                aria-label="Radial electron density of each subshell and the total versus distance from the nucleus"></canvas>
+        <div id="radial-tip" class="radial-tip" hidden></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Rendering</h2>
+      <label class="slider">
+        <span>Exposure <output id="exposure-val"></output></span>
+        <input id="exposure" type="range" min="0" max="100" step="0.5"
+               title="Mean detections per pixel per frame (if the whole atom were in view)">
+      </label>
+      <label class="row" title="Scale each orbital so its peak expected count is the same. Brightens the outer orbitals relative to the dense 1s core (relative densities are no longer to scale).">
+        <input type="checkbox" id="equalize"> Equalize orbitals <span class="hint">(not to scale)</span>
+      </label>
+      <label class="row" title="Use the same scale for every element (sized to fit lithium) so atom sizes can be compared.">
+        <input type="checkbox" id="fixed-scale"> Fixed scale <span class="hint">(compare sizes)</span>
+      </label>
+      <label class="slider">
+        <span>Counts for full brightness <output id="kmax-val"></output></span>
+        <input id="kmax" type="range" min="1" max="20" step="0.5">
+      </label>
+      <label class="slider">
+        <span>Tone gamma <output id="gamma-val"></output></span>
+        <input id="gamma" type="range" min="0.2" max="1.5" step="0.05"
+               title="brightness = (count / full)^gamma; lower lifts single detections">
+      </label>
+      <div class="row">
+        <span>Background</span>
+        <label><input type="radio" name="bgmode" value="dark"> Dark</label>
+        <label><input type="radio" name="bgmode" value="white"> White</label>
+      </div>
+      <div class="row buttons">
+        <button id="pause">Pause</button>
+        <button id="step">Step</button>
+        <button id="reset-view">Reset view</button>
+      </div>
+      <div class="row">
+        <label title="seed = frame number"><input type="checkbox" id="debug-seed"> Debug seed</label>
+        <label><input type="checkbox" id="show-overlay"> Overlay</label>
+      </div>
+    </section>
+
+    <footer>
+      Drag to rotate · scroll to zoom · ←/→ change element · space pause · r reset.
+      Hydrogen-like orbitals with Clementi–Raimondi Z<sub>eff</sub>; fixed orientation.
+    </footer>
+  </aside>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
