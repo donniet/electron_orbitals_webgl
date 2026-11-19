@@ -30,7 +30,7 @@ const state = {
   element: elementByZ(clampInt(params.get('z'), 1, ELEMENTS.length, 6)),
   orientation: defaultOrientation(),
   zoom: 1,
-  density: +params.get('density') || 0.15,
+  density: +params.get('density') || 1,
   equalize: params.get('equalize') === '1',
   fixedScale: params.get('scale') === 'fixed',
   kMax: +params.get('kmax') || 4,
