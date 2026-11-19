@@ -187,8 +187,7 @@ export function updateElement(app) {
     scb.addEventListener('change', () => app.setVisibleMany(idxAll, scb.checked));
     rows.push(h('tr', { class: 'shell' + (occN ? '' : ' empty') },
       h('td', {}, scb),
-      h('td', {}),
-      h('td', { class: 'orb-label' },
+      h('td', { class: 'orb-label', colspan: '2' },
         h('button', { class: 'caret', title: openShell ? 'Collapse shell' : 'Show subshells',
           'aria-expanded': String(openShell), onclick: () => app.toggleShell(n) }, openShell ? '▾' : '▸'),
         `n = ${n}`, h('span', { class: 'shell-letter' }, ` ${SHELL_LETTER[n]}`)),

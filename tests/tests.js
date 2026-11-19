@@ -93,7 +93,8 @@ test('fixed scale: same view for every element; auto: He ~0.59x H', () => {
   const fH = viewGeometry(H, 400, 300, 1, true), fHe = viewGeometry(He, 400, 300, 1, true);
   near(fH.halfExtent[1], fHe.halfExtent[1], 1e-12);
   near(fH.halfExtent[1], MAX_HORIZON / 0.9, 1e-12);
-  const largest = ELEMENTS.reduce((a, e) => (horizon(e, ORBITALS) > horizon(a, ORBITALS) ? e : a));
+  const largest = ELEMENTS.filter(e => e.supported)
+    .reduce((a, e) => (horizon(e, ORBITALS) > horizon(a, ORBITALS) ? e : a));
   near(MAX_HORIZON, horizon(largest, ORBITALS), 1e-12);
   // the alkali metal that starts the last enabled period
   const want = ELEMENTS.find(e => e.period === ELEMENTS[ELEMENTS.length - 1].period).symbol;
@@ -161,7 +162,7 @@ test('period 4: Cr and Cu exceptions, shorthand', () => {
 
 test('d peak search is not beaten by random rays', () => {
   const rand = makeRng(77);
-  for (const id of ['3dxy', '3dz2']) {
+  for (const id of ['3dxy', '3dz2', '4fxyz', '4fz3']) {
     const i = orbitalIndex(id);
     let best = 0;
     for (let k = 0; k < 3000; k++) {
@@ -173,7 +174,7 @@ test('d peak search is not beaten by random rays', () => {
       q = q.map((c, j) => c - t * d[j]);
       const n = Math.hypot(...q), u = 6 * rand();
       const P = q.map(c => (c / n) * u);
-      best = Math.max(best, columnDensity(TABLES, ORBITALS[i], 3, P, d));   // kappa = 1
+      best = Math.max(best, columnDensity(TABLES, ORBITALS[i], ORBITALS[i].n, P, d));   // kappa = 1
     }
     const peak = shapePeak(TABLES, i);
     assert(peak >= 0.97 * best, `${id}: search peak ${peak} < random best ${best}`);
@@ -208,6 +209,25 @@ test('stepping skips unsupported elements', () => {
     assert(stepElement(z - 1, +1) !== z, 'stepped onto an unsupported element');
   }
   assert(stepElement(1, -1) === null && stepElement(ELEMENTS.length, +1) === null);
+});
+
+test('period 6: lanthanides, Pt/Au, [Xe] shorthand, f-block valence', () => {
+  const E = sym => ELEMENTS.find(e => e.symbol === sym);
+  assert(ELEMENTS.length === 86, `${ELEMENTS.length} elements`);
+  assert(E('Cs').configShort === '[Xe] 6s¹', E('Cs').configShort);
+  assert(E('Eu').configShort === '[Xe] 4f⁷ 6s²', E('Eu').configShort);
+  assert(E('Pt').configShort === '[Xe] 4f¹⁴ 5d⁹ 6s¹', E('Pt').configShort);
+  assert(E('Au').configShort === '[Xe] 4f¹⁴ 5d¹⁰ 6s¹', E('Au').configShort);
+  assert(E('Rn').configShort === '[Xe] 4f¹⁴ 5d¹⁰ 6s² 6p⁶', E('Rn').configShort);
+  assert(['La', 'Ce', 'Gd'].every(s => !E(s).supported), 'La/Ce/Gd greyed');
+  assert(E('Nd').group === null && E('Nd').period === 6);
+  const val = sym => [...new Set(ORBITALS.filter(o => isValence(o, E(sym))).map(o => o.subshell))].sort().join();
+  assert(val('Nd') === '4f,6s', `Nd ${val('Nd')}`);
+  assert(val('Lu') === '5d,6s', `Lu ${val('Lu')}`);
+  assert(val('Hg') === '6s', `Hg ${val('Hg')}`);
+  // f Hund order: Nd 4f4 fills z3, xz2, yz2, xyz
+  const f = orbitalsOf('4f').map(i => E('Nd').occupancy[i]).join('');
+  assert(f === '1111000', `Nd 4f ${f}`);
 });
 
 test('electron configurations', () => {
@@ -516,6 +536,27 @@ test('GPU: white mode is the exact dual of dark mode', () => {
   assert(lit > 2000, `too few lit pixels ${lit}`);
   assert(worst <= 3, `max channel deviation ${worst}`);
   assert(overlaps === 0 || overlapDarker === overlaps, `${overlapDarker}/${overlaps} mixes darker`);
+});
+
+test('GPU: Nd 4f_xyz viewed down z is a four-leaf clover', () => {
+  const i = orbitalIndex('4fxyz');
+  const nd = ELEMENTS.find(e => e.symbol === 'Nd');
+  const visible = ORBITALS.map((o, j) => j === i);
+  const zoom = 8;
+  const g = viewGeometry(nd, 256, 256, zoom);
+  const rr = 0.8 * Math.sqrt(meanR2(4, 3, nd.zeff[i]));          // ~ lobe distance (a0)
+  const r = Math.round(rr / g.bohrPerPixel);
+  assert(r > 15 && r < 110, `lobe radius ${r}px`);
+  let diag = 0, axes = 0;
+  for (let s = 1; s <= 4; s++) {
+    const px = renderFrame(nd.z, { seed: s, equalize: true, density: 0.3, visible, zoom });
+    const c = 128, k = Math.round(r / Math.SQRT2);
+    for (let o = -3; o <= 3; o++) for (let t = -3; t <= 3; t++) {
+      for (const [sx, sy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) diag += brightness(px, c + sx * k + o, c + sy * k + t);
+      for (const [ax, ay] of [[r, 0], [-r, 0], [0, r], [0, -r]]) axes += brightness(px, c + ax + o, c + ay + t);
+    }
+  }
+  assert(diag > 3 * axes, `diagonals ${diag} vs axes ${axes}`);
 });
 
 test('GPU: white mode background is white', () => {

@@ -220,6 +220,7 @@ footer { color: var(--muted); font-size: 11px; margin-top: auto; }
 }
 #legend tr.child td { font-size: 12px; }
 #legend tr.shell td { border-top: 1px solid var(--border); padding-top: 4px; font-weight: 600; }
+#legend .orb-label { white-space: nowrap; }
 #legend tr.shell .shell-letter { color: var(--muted); font-weight: 400; }
 #legend tr.sub .orb-label { padding-left: 12px; }
 #legend tr.child .orb-label { padding-left: 30px; }

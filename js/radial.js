@@ -103,7 +103,7 @@ export function createRadialPlot(canvas, tooltip, legendEl) {
     // Fixed scale: share the y range across the element's period so e.g. He
     // vs H heights compare directly. Auto: fit this element.
     const yMax = 1.08 * (state.fixedScale
-      ? Math.max(...ELEMENTS.filter(e => e.period === el.period).map(e => peakOver(e, rMax)))
+      ? Math.max(...ELEMENTS.filter(e => e.period === el.period && e.supported).map(e => peakOver(e, rMax)))
       : peakOver(el, rMax));
     const pw = cw - M.l - M.r, ph = ch - M.t - M.b;
     const X = r => M.l + (r / rMax) * pw;

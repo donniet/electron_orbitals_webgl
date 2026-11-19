@@ -17,7 +17,7 @@ import { ORBITALS, SUBSHELLS, AUFBAU, orbitalsOf } from './orbitals.js';
 export { ORBITALS } from './orbitals.js';
 
 // Highest Z enabled in the app (the JSON may contain more).
-export const MAX_Z = 54;
+export const MAX_Z = 86;
 
 const CAPACITY = { 0: 2, 1: 6, 2: 10, 3: 14 };
 const SUP = '⁰¹²³⁴⁵⁶⁷⁸⁹';

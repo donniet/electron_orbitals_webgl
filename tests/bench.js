@@ -39,3 +39,4 @@ for (const z of zs) {
 }
 document.getElementById('out').textContent = lines.join('\n');
 document.title = 'BENCH ' + Object.entries(results).map(([k, v]) => `${k}=${v.toFixed(1)}ms`).join(' ');
+console.log('BENCH ' + lines.join(' | '));
