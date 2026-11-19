@@ -11,7 +11,7 @@ const BOHR_PM = 52.9177;
 // panel (validated: lightness band, CVD separation, contrast vs #151922).
 // One series per subshell, encoded compositely: colour = shell n (validated
 // on the dark panel, all pairs), line style = l (s solid, p dashed, d dotted).
-const SHELL_COLORS = { 1: '#ca1616', 2: '#b88b05', 3: '#0f91bd', 4: '#8b6cf0' };
+const SHELL_COLORS = { 1: '#ca1616', 2: '#b88b05', 3: '#0f91bd', 4: '#8b6cf0', 5: '#3f9a6a', 6: '#c2569a' };   // 5-6 provisional (Phase H)
 const L_DASH = { 0: [], 1: [6, 3], 2: [1.5, 2.5] };
 export const SERIES = SUBSHELLS.map(sh => ({
   key: sh.id, label: sh.id, color: SHELL_COLORS[sh.n], dash: L_DASH[sh.l], n: sh.n, l: sh.l,

@@ -190,9 +190,26 @@ export function radialDensity(n, l, z, r) {
 
 // Valence orbitals: the outermost shell plus an open (n-1)d subshell.
 export function isValence(orbital, element) {
-  const count = (element.subshells || {})[orbital.subshell] || 0;
+  const subs = element.subshells || {};
+  const count = subs[orbital.subshell] || 0;
   if (!count) return false;
-  const nMax = Math.max(...ORBITALS.filter((o, i) => element.occupancy[i] > 0).map(o => o.n));
-  if (orbital.n === nMax) return true;
-  return orbital.l === 2 && orbital.n === nMax - 1 && count < 10;
+  return valenceSubshells(element).has(orbital.subshell);
+}
+
+// Valence subshells: the period's ns/np, plus an open (n-1)d or (n-2)f.
+// If none of those is occupied (e.g. Pd, [Kr] 4d10), fall back to the
+// last occupied subshell in Aufbau order.
+export function valenceSubshells(element) {
+  const subs = element.subshells || {};
+  const p = element.period;
+  const out = new Set();
+  for (const id of [`${p}s`, `${p}p`]) if (subs[id]) out.add(id);
+  const d = `${p - 1}d`, f = `${p - 2}f`;
+  if (subs[d] > 0 && subs[d] < 10) out.add(d);
+  if (subs[f] > 0 && subs[f] < 14) out.add(f);
+  if (out.size === 0) {
+    const last = AUFBAU.filter(id => subs[id]).pop();
+    if (last) out.add(last);
+  }
+  return out;
 }

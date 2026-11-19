@@ -44,7 +44,7 @@ export function drawElementTile(ctx, el, x, y, scale = 1) {
 
   ctx.globalAlpha = 0.9;
   ctx.font = `${11 * scale}px system-ui, sans-serif`;
-  ctx.fillText(el.mass.toFixed(3), x + w / 2, y + 78 * scale);
+  ctx.fillText(String(Number(el.mass.toFixed(3))), x + w / 2, y + 78 * scale);
   ctx.restore();
 }
 

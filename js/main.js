@@ -67,7 +67,9 @@ let lastGeo = null;
 const app = {
   state,
   setElement(z) {
-    state.element = elementByZ(z);
+    const el = z && elementByZ(z);
+    if (!el || !el.supported) return;          // greyed-out elements can't be selected
+    state.element = el;
     state.visible = ORBITALS.map(() => true);
     updateElement(app);
     dirty = true;

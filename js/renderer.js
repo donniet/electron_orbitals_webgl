@@ -90,7 +90,7 @@ export const HORIZON_FILL = 0.9;
 
 // Largest horizon over all supported elements. Fixed-scale mode uses it for
 // every element so that sizes can be compared directly.
-export const MAX_HORIZON = Math.max(...ELEMENTS.map(el => horizon(el, ORBITALS)));
+export const MAX_HORIZON = Math.max(...ELEMENTS.filter(el => el.supported).map(el => horizon(el, ORBITALS)));
 
 // Target half-extent (Bohr, shorter screen half-dimension) before zoom.
 export function baseHalf(element, fixedScale = false) {

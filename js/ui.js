@@ -1,7 +1,7 @@
 // Side panel (periodic table, element card, orbital legend, controls) and the
 // 2D overlay drawn over the WebGL canvas (horizon ring, axes, scale bar).
 
-import { ELEMENTS, ORBITALS } from './elements.js';
+import { ELEMENTS, ORBITALS, stepElement } from './elements.js';
 import { SUBSHELLS, orbitalsOf } from './orbitals.js';
 import { qToMat3, meanR2, hslCss } from './math.js';
 import { categoryClass, drawElementTile, renderTileCanvas, TILE_W } from './tile.js';
@@ -35,8 +35,8 @@ export function buildUI(app) {
   const pt = $('#ptable');
   for (const el of ELEMENTS) {
     const cell = h('button', {
-      class: `pt-cell ${categoryClass(el.category)}`,
-      title: el.name,
+      class: `pt-cell ${categoryClass(el.category)}` + (el.supported ? '' : ' unsupported'),
+      title: el.supported ? el.name : `${el.name} — not available: ${el.unsupportedReason}`,
       'data-z': el.z,
       style: `grid-column: ${el.group}; grid-row: ${el.period}`,
       onclick: () => app.setElement(el.z),
@@ -69,8 +69,8 @@ export function buildUI(app) {
 
   window.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT') return;
-    if (e.key === 'ArrowRight') app.setElement(Math.min(ELEMENTS.length, app.state.element.z + 1));
-    else if (e.key === 'ArrowLeft') app.setElement(Math.max(1, app.state.element.z - 1));
+    if (e.key === 'ArrowRight') app.setElement(stepElement(app.state.element.z, +1));
+    else if (e.key === 'ArrowLeft') app.setElement(stepElement(app.state.element.z, -1));
     else if (e.key === ' ') { e.preventDefault(); app.setPaused(!app.state.paused); }
     else if (e.key === 'r') app.resetView();
     else if (e.key === 's') app.savePng();
@@ -117,8 +117,8 @@ export function updateElement(app) {
       h('div', { class: 'card-name-row' },
         h('div', { class: 'card-name' }, el.name),
         h('span', { class: 'stepper' },
-          stepButton('‹', 'Previous element (←)', el.z - 1, app),
-          stepButton('›', 'Next element (→)', el.z + 1, app))),
+          stepButton('‹', 'Previous element (←)', stepElement(el.z, -1), app),
+          stepButton('›', 'Next element (→)', stepElement(el.z, +1), app))),
       h('div', { class: 'card-cat' }, el.category),
       infoRow('Configuration', el.configShort, el.config),
       infoRow('Period / Group', `${el.period} / ${el.group}`),
@@ -193,7 +193,7 @@ export function updateElement(app) {
 
 function stepButton(label, title, z, app) {
   const b = h('button', { class: 'step', title, 'aria-label': title }, label);
-  if (z < 1 || z > ELEMENTS.length) b.disabled = true;
+  if (!z) b.disabled = true;
   else b.addEventListener('click', () => app.setElement(z));
   return b;
 }

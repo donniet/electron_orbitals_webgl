@@ -3,7 +3,7 @@
 // Results are written into the page; document.title becomes
 // "PASS n/n" or "FAIL k/n" so headless runs can read it.
 
-import { ELEMENTS, ORBITALS, aufbau, hundFill } from '../js/elements.js';
+import { ELEMENTS, ORBITALS, aufbau, hundFill, stepElement } from '../js/elements.js';
 import { SUBSHELLS, orbitalIndex, orbitalsOf, isValence, angularCoefs } from '../js/orbitals.js';
 import {
   qAxisAngle, qMul, qToMat3, mat3MulVec, viewToAtom, mat3ToGL,
@@ -95,8 +95,9 @@ test('fixed scale: same view for every element; auto: He ~0.59x H', () => {
   near(fH.halfExtent[1], MAX_HORIZON / 0.9, 1e-12);
   const largest = ELEMENTS.reduce((a, e) => (horizon(e, ORBITALS) > horizon(a, ORBITALS) ? e : a));
   near(MAX_HORIZON, horizon(largest, ORBITALS), 1e-12);
-  const want = ELEMENTS.length > 18 ? 'K' : 'Na';
-  assert(largest.symbol === want, `largest is ${largest.symbol}`);
+  // the alkali metal that starts the last enabled period
+  const want = ELEMENTS.find(e => e.period === ELEMENTS[ELEMENTS.length - 1].period).symbol;
+  assert(largest.symbol === want, `largest is ${largest.symbol}, expected ${want}`);
   const aH = viewGeometry(H, 400, 300, 1, false), aHe = viewGeometry(He, 400, 300, 1, false);
   near(aHe.halfExtent[1] / aH.halfExtent[1], 1 / 1.688, 1e-9);
 });
@@ -108,7 +109,7 @@ test('element data: sequential Z, occupancy sums to Z', () => {
   for (const el of ELEMENTS) {
     const sum = el.occupancy.reduce((a, b) => a + b, 0);
     assert(sum === el.z, `${el.symbol}: ${sum} != ${el.z}`);
-    el.occupancy.forEach((o, i) => assert(o === 0 || el.zeff[i] > 0, `${el.symbol} missing Z_eff`));
+    if (el.supported) el.occupancy.forEach((o, i) => assert(o === 0 || el.zeff[i] > 0, `${el.symbol} missing Z_eff`));
   }
 });
 
@@ -142,7 +143,7 @@ test('outer p shells are paler (chroma) with the same axis hues', () => {
 });
 
 test('period 4: Cr and Cu exceptions, shorthand', () => {
-  assert(ELEMENTS.length === 36, `${ELEMENTS.length} elements`);
+  assert(ELEMENTS.length >= 36, `${ELEMENTS.length} elements`);
   const cfg = z => ELEMENTS[z - 1].configShort;
   assert(cfg(19) === '[Ar] 4s¹', cfg(19));
   assert(cfg(24) === '[Ar] 3d⁵ 4s¹', cfg(24));
@@ -175,6 +176,35 @@ test('d peak search is not beaten by random rays', () => {
     assert(peak >= 0.97 * best, `${id}: search peak ${peak} < random best ${best}`);
     assert(peak <= 1.3 * best, `${id}: search peak ${peak} >> random best ${best}`);
   }
+});
+
+test('period 5: 4d anomalies and [Kr] shorthand from the data', () => {
+  const cfg = sym => ELEMENTS.find(e => e.symbol === sym).configShort;
+  assert(cfg('Rb') === '[Kr] 5s¹', cfg('Rb'));
+  assert(cfg('Nb') === '[Kr] 4d⁴ 5s¹', cfg('Nb'));
+  assert(cfg('Mo') === '[Kr] 4d⁵ 5s¹', cfg('Mo'));
+  assert(cfg('Pd') === '[Kr] 4d¹⁰', cfg('Pd'));
+  assert(cfg('Ag') === '[Kr] 4d¹⁰ 5s¹', cfg('Ag'));
+  assert(cfg('Xe') === '[Kr] 4d¹⁰ 5s² 5p⁶', cfg('Xe'));
+  const pd = ELEMENTS.find(e => e.symbol === 'Pd');
+  const ids = [...new Set(ORBITALS.filter(o => isValence(o, pd)).map(o => o.subshell))].join();
+  assert(ids === '4d', `Pd valence ${ids}`);
+});
+
+test('data: Clementi Z_eff for every occupied subshell, Kr 4p corrected', () => {
+  for (const el of ELEMENTS.filter(e => e.supported)) {
+    for (const id of Object.keys(el.subshells)) assert(el.zeffBySubshell[id] > 0, `${el.symbol} ${id}`);
+  }
+  near(ELEMENTS[35].zeffBySubshell['4p'], 9.769, 1e-9);
+});
+
+test('stepping skips unsupported elements', () => {
+  const firstUnsupported = ELEMENTS.find(e => !e.supported);
+  if (firstUnsupported) {
+    const z = firstUnsupported.z;
+    assert(stepElement(z - 1, +1) !== z, 'stepped onto an unsupported element');
+  }
+  assert(stepElement(1, -1) === null && stepElement(ELEMENTS.length, +1) === null);
 });
 
 test('electron configurations', () => {
