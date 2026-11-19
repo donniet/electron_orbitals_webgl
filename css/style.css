@@ -12,6 +12,7 @@
   --cat-alkaline-earth-metal: #b5884a;
   --cat-metalloid: #4a8fb5;
   --cat-halogen: #4ab5a3;
+  --cat-lanthanide: #b0628c;
   --cat-post-transition-metal: #6f7f8f;
   --cat-transition-metal: #a8664e;
 }
@@ -117,10 +118,11 @@ footer { color: var(--muted); font-size: 11px; margin-top: auto; }
 /* ---------------------------------------------------------------- periodic table */
 .ptable {
   display: grid;
-  grid-template-columns: repeat(18, minmax(0, 40px));
+  grid-template-columns: repeat(18, minmax(0, 36px));
   justify-content: center;
   gap: 3px;
-  padding: 8px 12px;
+  padding: 8px 40px 8px 12px;
+  position: relative;
   border-bottom: 1px solid var(--border);
   background: var(--panel);
 }
@@ -137,6 +139,19 @@ footer { color: var(--muted); font-size: 11px; margin-top: auto; }
 }
 .pt-cell:hover { opacity: 1; }
 .pt-cell.active { opacity: 1; border-color: #fff; box-shadow: 0 0 0 1px #fff; }
+.pt-cell[hidden] { display: none; }
+.pt-cell.f-row { margin-top: 6px; }
+.ptable.collapsed .pt-cell.f-row { margin-top: 0; }
+.pt-marker { display: flex; align-items: center; justify-content: center; cursor: default; opacity: 0.7; }
+.pt-marker .pt-sym { font-size: 9px; font-weight: 500; }
+#ptable-toggle {
+  position: absolute; top: 6px; right: 8px;
+  width: 26px; height: 26px; padding: 0;
+  background: var(--panel-2); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 5px;
+  font: 12px/1 system-ui, sans-serif; cursor: pointer;
+}
+#ptable-toggle:hover { border-color: var(--accent); }
 /* Elements the model can't represent (see data/elements.json unsupportedReason). */
 .pt-cell.unsupported {
   background: #3a3f4b;
@@ -153,6 +168,7 @@ footer { color: var(--muted); font-size: 11px; margin-top: auto; }
 .cat-alkaline-earth-metal { background: var(--cat-alkaline-earth-metal); }
 .cat-metalloid { background: var(--cat-metalloid); }
 .cat-halogen { background: var(--cat-halogen); }
+.cat-lanthanide { background: var(--cat-lanthanide); }
 .cat-post-transition-metal { background: var(--cat-post-transition-metal); }
 .cat-transition-metal { background: var(--cat-transition-metal); }
 
@@ -197,13 +213,17 @@ footer { color: var(--muted); font-size: 11px; margin-top: auto; }
 .seg button:first-child { border-radius: 4px 0 0 4px; }
 .seg button:last-child { border-radius: 0 4px 4px 0; border-left: 0; }
 .seg button:hover { color: var(--fg); border-color: var(--accent); }
+.seg button.on { color: var(--fg); background: var(--panel); border-color: var(--accent); }
 #legend .caret {
   background: none; border: 0; color: var(--muted); cursor: pointer;
   font-size: 10px; padding: 0 4px 0 0; width: 14px;
 }
 #legend tr.child td { font-size: 12px; }
+#legend tr.shell td { border-top: 1px solid var(--border); padding-top: 4px; font-weight: 600; }
+#legend tr.shell .shell-letter { color: var(--muted); font-weight: 400; }
+#legend tr.sub .orb-label { padding-left: 12px; }
+#legend tr.child .orb-label { padding-left: 30px; }
 .note { color: var(--muted); font-size: 11px; margin: 6px 0 0; }
-#legend tr.child .orb-label { padding-left: 18px; }
 #legend .swatches { white-space: nowrap; }
 #legend .swatches .swatch { width: 9px; height: 9px; margin-right: 1px; }
 #legend { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -222,6 +242,7 @@ footer { color: var(--muted); font-size: 11px; margin-top: auto; }
 
 /* ---------------------------------------------------------------- radial inset */
 .h2-unit { text-transform: none; letter-spacing: 0; font-size: 11px; margin-left: 6px; }
+.h2-row .h2-unit { display: block; margin: 2px 0 0; }
 .radial-legend { display: flex; gap: 12px; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
 .rl-item svg, .radial-tip svg { vertical-align: middle; margin-right: 4px; }
 .radial-legend { flex-wrap: wrap; row-gap: 2px; }
@@ -297,7 +318,7 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
   .ptable {
     grid-template-columns: repeat(18, minmax(0, 26px));
     gap: 2px;
-    padding: 6px;
+    padding: 6px 36px 6px 6px;
   }
   #status {
     top: auto;
@@ -319,6 +340,6 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
 
 /* Short screens (phones in landscape): smaller strip cells. */
 @media (max-height: 520px) {
-  .ptable { grid-template-columns: repeat(18, minmax(0, 22px)); padding: 4px 6px; }
+  .ptable { grid-template-columns: repeat(18, minmax(0, 22px)); padding: 4px 36px 4px 6px; }
   .pt-sym { font-size: 10px; }
 }

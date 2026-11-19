@@ -43,7 +43,13 @@
     </section>
 
     <section>
-      <h2>Radial density <span class="h2-unit">e⁻ per a₀ vs r (pm)</span></h2>
+      <div class="h2-row">
+        <h2>Radial density <span class="h2-unit">e⁻ per a₀ vs r (pm)</span></h2>
+        <div class="seg">
+          <button id="radial-shells" title="One curve per shell n">Shells</button>
+          <button id="radial-subshells" title="One curve per subshell">Subshells</button>
+        </div>
+      </div>
       <div id="radial-legend" class="radial-legend"></div>
       <div class="radial-wrap">
         <canvas id="radial" role="img"

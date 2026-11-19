@@ -76,37 +76,35 @@ const F_SHAPES = [
   { m: 'y(3x2-y2)', label: 'y(3x²−y²)', C: cubicTensor([[[2, 1, 0], 3 * FE], [[0, 3, 0], -FE]]) },
 ];
 
-// Render colours. Hue encodes the angular shape; `chroma` (0..1) scales an
-// orbital's contribution to the hue vector, so outer p shells read as paler
-// versions of the same axis colour.
+// Render colours. Hue encodes the angular shape (chroma, the weight of the
+// hue, depends on the element: see orbitalChroma below).
 //  s: warm hues by shell (concentric shells stay distinguishable)
-//  p: one hue per axis in every shell, paler with n
-//  d: five hues of their own
+//  p: one hue per axis in every shell
+//  d, f: hues of their own
 const S_HUE = { 1: 0, 2: 45, 3: 340, 4: 20, 5: 45, 6: 340 };
 const P_HUE = { x: 195, y: 275, z: 125 };
-const P_CHROMA = { 2: 1, 3: 0.6, 4: 0.35, 5: 0.35, 6: 0.35 };   // provisional until Phase H
 const D_HUE = { xy: 300, yz: 235, xz: 160, 'x2-y2': 85, z2: 55 };
 const F_HUE = { z3: 15, xz2: 65, yz2: 105, xyz: 145, 'z(x2-y2)': 215, 'x(x2-3y2)': 255, 'y(3x2-y2)': 320 };
 
 function makeOrbitals(subshellId) {
   const s = SUBSHELL[subshellId];
   const base = { subshell: s.id, n: s.n, l: s.l, row: s.row };
-  if (s.l === 0) return [{ ...base, id: s.id, m: '', label: s.id, hue: S_HUE[s.n], chroma: 1 }];
+  if (s.l === 0) return [{ ...base, id: s.id, m: '', label: s.id, hue: S_HUE[s.n] }];
   if (s.l === 1) {
     return P_SHAPES.map((p, a) => ({
       ...base, id: s.id + p.m, m: p.m, axis: a, e: p.e,
-      label: `${s.id}<sub>${p.label}</sub>`, hue: P_HUE[p.m], chroma: P_CHROMA[s.n],
+      label: `${s.id}<sub>${p.label}</sub>`, hue: P_HUE[p.m],
     }));
   }
   if (s.l === 2) {
     return D_SHAPES.map(d => ({
       ...base, id: s.id + d.m, m: d.m, Q: d.Q,
-      label: `${s.id}<sub>${d.label}</sub>`, hue: D_HUE[d.m], chroma: 1,
+      label: `${s.id}<sub>${d.label}</sub>`, hue: D_HUE[d.m],
     }));
   }
   return F_SHAPES.map(f => ({
     ...base, id: s.id + f.m, m: f.m, C: f.C,
-    label: `${s.id}<sub>${f.label}</sub>`, hue: F_HUE[f.m], chroma: 1,
+    label: `${s.id}<sub>${f.label}</sub>`, hue: F_HUE[f.m],
   }));
 }
 
@@ -186,6 +184,15 @@ export function radialDensity(n, l, z, r) {
   const u = k * r;
   const R = radialRefR(n, l, u);
   return k * u * u * R * R;
+}
+
+// Render chroma (weight of the orbital's hue) by depth relative to the
+// element: valence orbitals are vivid, the shell just inside paler, deeper
+// shells palest. s orbitals stay vivid (concentric s shells are told apart
+// by their hues), so H-Ne look as before.
+export function orbitalChroma(orbital, element) {
+  if (orbital.l === 0 || isValence(orbital, element)) return 1;
+  return element.period - orbital.n <= 1 ? 0.6 : 0.35;
 }
 
 // Valence orbitals: the outermost shell plus an open (n-1)d subshell.

@@ -7,16 +7,29 @@ import { SUBSHELLS, orbitalsOf } from './orbitals.js';
 
 const BOHR_PM = 52.9177;
 
-// Same hues as the render, stepped to chart-safe lightness for the dark
-// panel (validated: lightness band, CVD separation, contrast vs #151922).
-// One series per subshell, encoded compositely: colour = shell n (validated
-// on the dark panel, all pairs), line style = l (s solid, p dashed, d dotted).
-const SHELL_COLORS = { 1: '#ca1616', 2: '#b88b05', 3: '#0f91bd', 4: '#8b6cf0', 5: '#3f9a6a', 6: '#c2569a' };   // 5-6 provisional (Phase H)
-const L_DASH = { 0: [], 1: [6, 3], 2: [1.5, 2.5] };
+// Colour = shell n, validated on the dark panel (#151922) in shell order,
+// i.e. neighbouring shells, which overlap in r (n5/n6 sit in the CVD
+// 6-8 band, so curves are also direct-labelled). Two modes:
+//  - subshells: one series per subshell, line style = l
+//    (s solid, p dashed, d dotted, f dash-dot);
+//  - shells: one solid series per shell n (for heavy atoms).
+const SHELL_COLORS = { 1: '#ca1616', 2: '#b88b05', 3: '#0f91bd', 4: '#8b6cf0', 5: '#3f9a6a', 6: '#c2569a' };
+const L_DASH = { 0: [], 1: [6, 3], 2: [1.5, 2.5], 3: [8, 3, 1.5, 3] };
+const part = sh => ({ n: sh.n, l: sh.l, orbitals: orbitalsOf(sh.id) });
 export const SERIES = SUBSHELLS.map(sh => ({
-  key: sh.id, label: sh.id, color: SHELL_COLORS[sh.n], dash: L_DASH[sh.l], n: sh.n, l: sh.l,
-  orbitals: orbitalsOf(sh.id),
+  key: sh.id, label: sh.id, color: SHELL_COLORS[sh.n], dash: L_DASH[sh.l], parts: [part(sh)],
 }));
+export const SHELL_SERIES = [...new Set(SUBSHELLS.map(sh => sh.n))].sort((a, b) => a - b).map(n => ({
+  key: `n${n}`, label: `n=${n}`, color: SHELL_COLORS[n], dash: [],
+  parts: SUBSHELLS.filter(sh => sh.n === n).map(part),
+}));
+
+// 'shell' | 'subshell' for this element: explicit choice, or shells when
+// more than 8 subshells are occupied.
+export function radialMode(state, el) {
+  if (state.radialMode === 'shell' || state.radialMode === 'subshell') return state.radialMode;
+  return Object.keys(el.subshells).length > 8 ? 'shell' : 'subshell';
+}
 
 // Small inline line sample for legends/tooltips (same colour + dash as the plot).
 function lineSample(color, dash = []) {
@@ -29,12 +42,18 @@ const INK = { muted: '#8b93a7', faint: '#2a3142', text: '#e6e9f0', total: '#c5ca
 const M = { l: 34, r: 8, t: 10, b: 22 };   // margins, CSS px
 const SAMPLES = 240;
 
-// Electrons per a0 for one subshell series of `el` at radius r (Bohr).
+// Electrons per a0 for one series (a subshell or a whole shell) at r (Bohr).
 export function seriesDensity(el, s, r) {
-  const occ = s.orbitals.reduce((a, i) => a + el.occupancy[i], 0);
-  if (!occ) return 0;
-  return occ * radialDensity(s.n, s.l, el.zeff[s.orbitals[0]], r);
+  let sum = 0;
+  for (const p of s.parts) {
+    const occ = p.orbitals.reduce((a, i) => a + el.occupancy[i], 0);
+    if (occ) sum += occ * radialDensity(p.n, p.l, el.zeff[p.orbitals[0]], r);
+  }
+  return sum;
 }
+
+const occupiedSeries = (list, el) =>
+  list.filter(s => s.parts.some(p => p.orbitals.some(i => el.occupancy[i] > 0)));
 
 function totalDensity(el, r) {
   return SERIES.reduce((a, s) => a + seriesDensity(el, s, r), 0);
@@ -137,7 +156,7 @@ export function createRadialPlot(canvas, tooltip, legendEl) {
       rs.forEach((r, i) => { const y = Y(Math.min(fn(r), yMax * 1.2)); i ? ctx.lineTo(X(r), y) : ctx.moveTo(X(r), y); });
       ctx.stroke();
     };
-    const active = SERIES.filter(s => s.orbitals.some(i => el.occupancy[i] > 0));
+    const active = occupiedSeries(radialMode(state, el) === 'shell' ? SHELL_SERIES : SERIES, el);
     updateLegend(active);
     ctx.save();
     ctx.beginPath(); ctx.rect(M.l, M.t - 2, pw, ph + 4); ctx.clip();

@@ -2,17 +2,28 @@
 // 2D overlay drawn over the WebGL canvas (horizon ring, axes, scale bar).
 
 import { ELEMENTS, ORBITALS, stepElement } from './elements.js';
-import { SUBSHELLS, orbitalsOf } from './orbitals.js';
+import { SUBSHELLS, orbitalsOf, orbitalChroma, valenceSubshells } from './orbitals.js';
 import { qToMat3, meanR2, hslCss } from './math.js';
 import { categoryClass, drawElementTile, renderTileCanvas, TILE_W } from './tile.js';
 
 const BOHR_PM = 52.9177;
-const CAPACITY = { 0: 2, 1: 6, 2: 10 };
+const CAPACITY = { 0: 2, 1: 6, 2: 10, 3: 14 };
 
 // Swatch colour for an orbital: paler for low-chroma (outer-shell) orbitals,
 // approximating how they read in the render.
-function orbitalCss(o) {
-  return hslCss(o.hue, Math.round(90 * o.chroma), Math.round(55 + 25 * (1 - o.chroma)));
+function orbitalCss(o, el) {
+  const c = orbitalChroma(o, el);
+  return hslCss(o.hue, Math.round(90 * c), Math.round(55 + 25 * (1 - c)));
+}
+
+const SHELL_LETTER = { 1: 'K', 2: 'L', 3: 'M', 4: 'N', 5: 'O', 6: 'P' };
+
+// Shells expanded by default: those holding valence subshells, or every
+// shell for light atoms (few subshells).
+export function defaultExpandedShells(el) {
+  const occupied = Object.keys(el.subshells);
+  if (occupied.length <= 6) return new Set(occupied.map(id => +id[0]));
+  return new Set([...valenceSubshells(el)].map(id => +id[0]));
 }
 
 const $ = sel => document.querySelector(sel);
@@ -32,19 +43,32 @@ function h(tag, attrs = {}, ...children) {
 
 export function buildUI(app) {
   // ---------------------------------------------------- periodic table
+  // Standard 18-column layout; the f-block (La-Lu) sits in its own row below,
+  // behind a "57–71" marker in group 3. Every cell records its row so the
+  // strip can collapse to the current element's row.
   const pt = $('#ptable');
+  const F_ROW = 8;                                   // row 7 is a visual gap
   for (const el of ELEMENTS) {
+    const fBlock = el.group == null;
+    const row = fBlock ? F_ROW : el.period;
+    const col = fBlock ? 3 + (el.z - 57) : el.group;
     const cell = h('button', {
-      class: `pt-cell ${categoryClass(el.category)}` + (el.supported ? '' : ' unsupported'),
+      class: `pt-cell ${categoryClass(el.category)}` + (el.supported ? '' : ' unsupported') +
+        (fBlock ? ' f-row' : ''),
       title: el.supported ? el.name : `${el.name} — not available: ${el.unsupportedReason}`,
-      'data-z': el.z,
-      style: `grid-column: ${el.group}; grid-row: ${el.period}`,
+      'data-z': el.z, 'data-row': row, 'data-col': col,
       onclick: () => app.setElement(el.z),
     },
     h('span', { class: 'pt-z' }, String(el.z)),
     h('span', { class: 'pt-sym' }, el.symbol));
     pt.append(cell);
   }
+  if (ELEMENTS.some(el => el.group == null)) {
+    pt.append(h('div', { class: 'pt-cell pt-marker cat-lanthanide', 'data-row': 6, 'data-col': 3,
+      title: 'Lanthanides (57–71), shown in the row below' }, h('span', { class: 'pt-sym' }, '57–71')));
+  }
+  const toggle = h('button', { id: 'ptable-toggle', onclick: () => app.setTableCollapsed(!app.tableCollapsed) });
+  pt.append(toggle);
 
   // ---------------------------------------------------- controls
   const exposure = $('#exposure');
@@ -66,6 +90,8 @@ export function buildUI(app) {
   $('#save-png').addEventListener('click', () => app.savePng());
   $('#show-all').addEventListener('click', () => app.showAll());
   $('#show-valence').addEventListener('click', () => app.showValence());
+  $('#radial-shells').addEventListener('click', () => app.setRadialMode('shell'));
+  $('#radial-subshells').addEventListener('click', () => app.setRadialMode('subshell'));
 
   window.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT') return;
@@ -101,12 +127,27 @@ export function syncControls(state) {
   document.body.classList.toggle('mode-white', state.mode === 'white');
 }
 
+export function updateTable(app) {
+  const el = app.state.element;
+  const current = el.group == null ? 8 : el.period;
+  for (const c of document.querySelectorAll('#ptable .pt-cell')) {
+    c.classList.toggle('active', +c.dataset.z === el.z);
+    const row = +c.dataset.row;
+    c.hidden = app.tableCollapsed && row !== current;
+    c.style.gridColumn = c.dataset.col;
+    c.style.gridRow = app.tableCollapsed ? 1 : row;
+  }
+  const t = $('#ptable-toggle');
+  t.textContent = app.tableCollapsed ? '▾' : '▴';
+  t.title = app.tableCollapsed ? 'Show the whole periodic table' : 'Collapse to the current row';
+  t.setAttribute('aria-expanded', String(!app.tableCollapsed));
+  $('#ptable').classList.toggle('collapsed', app.tableCollapsed);
+}
+
 export function updateElement(app) {
   const { state } = app;
   const el = state.element;
-  for (const c of document.querySelectorAll('.pt-cell')) {
-    c.classList.toggle('active', +c.dataset.z === el.z);
-  }
+  updateTable(app);
 
   const tile = h('canvas', { class: 'card-symbol', role: 'img',
     'aria-label': `${el.name}, atomic number ${el.z}, mass ${el.mass}` });
@@ -121,58 +162,84 @@ export function updateElement(app) {
           stepButton('›', 'Next element (→)', stepElement(el.z, +1), app))),
       h('div', { class: 'card-cat' }, el.category),
       infoRow('Configuration', el.configShort, el.config),
-      infoRow('Period / Group', `${el.period} / ${el.group}`),
+      infoRow('Period / Group', `${el.period} / ${el.group ?? 'f-block'}`),
       infoRow('Electronegativity', el.electronegativity == null ? '—' : el.electronegativity.toFixed(2)),
       infoRow('1st ionization', `${el.ionizationEnergy.toFixed(3)} eV`)),
   );
 
-  // Subshells of every period up to this element's (at least 2), grouped;
-  // p and d rows expand to their individual orbitals.
+  // Subshells of every period up to this element's (at least 2), grouped by
+  // shell (n). Shell rows collapse; p/d/f rows expand to single orbitals.
   const maxPeriod = Math.max(2, el.period);
   const rows = [];
-  for (const sh of SUBSHELLS.filter(x => x.period <= maxPeriod)) {
-    const idx = orbitalsOf(sh.id);
-    const occ = idx.reduce((a, i) => a + el.occupancy[i], 0);
-    const z = el.zeffBySubshell[sh.id];
-    const r = occ ? Math.sqrt(meanR2(sh.n, sh.l, z)) : null;
-    const shown = idx.filter(i => state.visible[i]).length;
+  const shown = SUBSHELLS.filter(x => x.period <= maxPeriod);
+  for (const n of [...new Set(shown.map(x => x.n))].sort((a, b) => a - b)) {
+    const shells = shown.filter(x => x.n === n);
+    const idxAll = shells.flatMap(sh => orbitalsOf(sh.id));
+    const occN = idxAll.reduce((a, i) => a + el.occupancy[i], 0);
+    const visN = idxAll.filter(i => state.visible[i] && el.occupancy[i] > 0).length;
+    const occupiedN = idxAll.filter(i => el.occupancy[i] > 0).length;
+    const openShell = app.expandedShells.has(n);
 
-    const cb = h('input', { type: 'checkbox', title: 'Show / hide this subshell' });
-    cb.checked = shown === idx.length;
-    cb.indeterminate = shown > 0 && shown < idx.length;
-    cb.disabled = occ === 0;
-    cb.addEventListener('change', () => app.setVisibleMany(idx, cb.checked));
+    const scb = h('input', { type: 'checkbox', title: `Show / hide shell n = ${n}` });
+    scb.checked = occupiedN > 0 && visN === occupiedN;
+    scb.indeterminate = visN > 0 && visN < occupiedN;
+    scb.disabled = occN === 0;
+    scb.addEventListener('change', () => app.setVisibleMany(idxAll, scb.checked));
+    rows.push(h('tr', { class: 'shell' + (occN ? '' : ' empty') },
+      h('td', {}, scb),
+      h('td', {}),
+      h('td', { class: 'orb-label' },
+        h('button', { class: 'caret', title: openShell ? 'Collapse shell' : 'Show subshells',
+          'aria-expanded': String(openShell), onclick: () => app.toggleShell(n) }, openShell ? '▾' : '▸'),
+        `n = ${n}`, h('span', { class: 'shell-letter' }, ` ${SHELL_LETTER[n]}`)),
+      h('td', { class: 'num' }, occN ? String(occN) : '—'),
+      h('td', {}), h('td', {})));
+    if (!openShell) continue;
 
-    const expandable = sh.l > 0 && occ > 0;
-    const open = expandable && app.expanded.has(sh.id);
-    const caret = expandable
-      ? h('button', { class: 'caret', title: open ? 'Collapse' : 'Show individual orbitals',
-          'aria-expanded': String(open), onclick: () => app.toggleExpanded(sh.id) }, open ? '▾' : '▸')
-      : h('span', { class: 'caret' });
+    for (const sh of shells) {
+      const idx = orbitalsOf(sh.id);
+      const occ = idx.reduce((a, i) => a + el.occupancy[i], 0);
+      const z = el.zeffBySubshell[sh.id];
+      const r = occ ? Math.sqrt(meanR2(sh.n, sh.l, z)) : null;
+      const vis = idx.filter(i => state.visible[i]).length;
 
-    rows.push(h('tr', { class: occ ? '' : 'empty' },
-      h('td', {}, cb),
-      h('td', { class: 'swatches' }, ...idx.map(i =>
-        h('span', { class: 'swatch', style: `background:${orbitalCss(ORBITALS[i])}` }))),
-      h('td', { class: 'orb-label' }, caret, sh.id),
-      h('td', { class: 'num' }, occ ? `${occ}/${CAPACITY[sh.l]}` : '—'),
-      h('td', { class: 'num' }, occ ? z.toFixed(3) : ''),
-      h('td', { class: 'num' }, occ ? (r * BOHR_PM).toFixed(0) : '')));
+      const cb = h('input', { type: 'checkbox', title: 'Show / hide this subshell' });
+      cb.checked = vis === idx.length;
+      cb.indeterminate = vis > 0 && vis < idx.length;
+      cb.disabled = occ === 0;
+      cb.addEventListener('change', () => app.setVisibleMany(idx, cb.checked));
 
-    if (open) {
-      for (const i of idx) {
-        const o = ORBITALS[i];
-        const n = el.occupancy[i];
-        const ocb = h('input', { type: 'checkbox', title: 'Show / hide this orbital' });
-        ocb.checked = state.visible[i];
-        ocb.disabled = n === 0;
-        ocb.addEventListener('change', () => app.setVisible(i, ocb.checked));
-        rows.push(h('tr', { class: 'child' + (n ? '' : ' empty') },
-          h('td', {}, ocb),
-          h('td', { class: 'swatches' }, h('span', { class: 'swatch', style: `background:${orbitalCss(o)}` })),
-          h('td', { class: 'orb-label', html: o.label }),
-          h('td', { class: 'pips' }, n === 0 ? '—' : (n === 2 ? '↑↓' : '↑')),
-          h('td', {}), h('td', {})));
+      const expandable = sh.l > 0 && occ > 0;
+      const open = expandable && app.expanded.has(sh.id);
+      const caret = expandable
+        ? h('button', { class: 'caret', title: open ? 'Collapse' : 'Show individual orbitals',
+            'aria-expanded': String(open), onclick: () => app.toggleExpanded(sh.id) }, open ? '▾' : '▸')
+        : h('span', { class: 'caret' });
+
+      rows.push(h('tr', { class: 'sub' + (occ ? '' : ' empty') },
+        h('td', {}, cb),
+        h('td', { class: 'swatches' }, ...idx.map(i =>
+          h('span', { class: 'swatch', style: `background:${orbitalCss(ORBITALS[i], el)}` }))),
+        h('td', { class: 'orb-label' }, caret, sh.id),
+        h('td', { class: 'num' }, occ ? `${occ}/${CAPACITY[sh.l]}` : '—'),
+        h('td', { class: 'num' }, occ ? z.toFixed(3) : ''),
+        h('td', { class: 'num' }, occ ? (r * BOHR_PM).toFixed(0) : '')));
+
+      if (open) {
+        for (const i of idx) {
+          const o = ORBITALS[i];
+          const k = el.occupancy[i];
+          const ocb = h('input', { type: 'checkbox', title: 'Show / hide this orbital' });
+          ocb.checked = state.visible[i];
+          ocb.disabled = k === 0;
+          ocb.addEventListener('change', () => app.setVisible(i, ocb.checked));
+          rows.push(h('tr', { class: 'child' + (k ? '' : ' empty') },
+            h('td', {}, ocb),
+            h('td', { class: 'swatches' }, h('span', { class: 'swatch', style: `background:${orbitalCss(o, el)}` })),
+            h('td', { class: 'orb-label', html: o.label }),
+            h('td', { class: 'pips' }, k === 0 ? '—' : (k === 2 ? '↑↓' : '↑')),
+            h('td', {}), h('td', {})));
+        }
       }
     }
   }
@@ -182,13 +249,21 @@ export function updateElement(app) {
   // several equivalent (degenerate) choices; say which convention is shown.
   const partial = SUBSHELLS.filter(sh => sh.l > 0 &&
     (el.subshells[sh.id] || 0) > 0 && el.subshells[sh.id] < CAPACITY[sh.l]);
-  const note = $('#fill-note');
-  note.hidden = partial.length === 0;
+  const HUND_ORDER = { 1: 'p: x, y, z', 2: 'd: xy, yz, xz, x²−y², z²',
+    3: 'f: z³, xz², yz², xyz, z(x²−y²), x(x²−3y²), y(3x²−y²)' };
+  const notes = [];
   if (partial.length) {
-    const order = partial.map(sh => (sh.l === 1 ? 'p: x, y, z' : 'd: xy, yz, xz, x²−y², z²'));
-    note.textContent = `Partly filled ${partial.map(sh => sh.id).join(', ')}: shown is one of several ` +
-      `equivalent fillings (Hund's rule in the order ${[...new Set(order)].join('; ')}).`;
+    const order = [...new Set(partial.map(sh => HUND_ORDER[sh.l]))].join('; ');
+    notes.push(`Partly filled ${partial.map(sh => sh.id).join(', ')}: shown is one of several ` +
+      `equivalent fillings (Hund's rule in the order ${order}).`);
   }
+  if (el.z >= 55) {
+    notes.push('Non-relativistic hydrogen-like model: relativistic contraction / expansion of ' +
+      'heavy-atom orbitals (e.g. 6s, 5d) is not included.');
+  }
+  const note = $('#fill-note');
+  note.hidden = notes.length === 0;
+  note.textContent = notes.join(' ');
 }
 
 function stepButton(label, title, z, app) {

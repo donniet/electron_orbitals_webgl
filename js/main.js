@@ -16,8 +16,8 @@ import { createRenderer, baseHalf, viewGeometry } from './renderer.js';
 import { createScaleAnimator, prefersReducedMotion } from './view.js';
 import { loadTables } from './tables.js';
 import { attachControls } from './controls.js';
-import { buildUI, syncControls, updateElement, updateStatus, drawOverlay } from './ui.js';
-import { createRadialPlot } from './radial.js';
+import { buildUI, syncControls, updateElement, updateTable, updateStatus, drawOverlay, defaultExpandedShells } from './ui.js';
+import { createRadialPlot, radialMode } from './radial.js';
 
 const params = new URLSearchParams(location.search);
 
@@ -33,6 +33,7 @@ const state = {
   density: +params.get('density') || 1,
   equalize: params.get('equalize') === '1',
   fixedScale: params.get('scale') === 'fixed',
+  radialMode: 'auto',            // 'auto' | 'shell' | 'subshell'
   kMax: +params.get('kmax') || 4,
   gamma: +params.get('gamma') || 0.5,
   mode: params.get('mode') === 'white' ? 'white' : 'dark',
@@ -43,6 +44,23 @@ const state = {
   frame: 0,
   seed: 0,
 };
+
+function syncRadialButtons() {
+  const mode = radialMode(state, state.element);
+  for (const [id, m] of [['radial-shells', 'shell'], ['radial-subshells', 'subshell']]) {
+    const b = document.getElementById(id);
+    b.classList.toggle('on', mode === m);
+    b.setAttribute('aria-pressed', String(mode === m));
+  }
+}
+
+function loadCollapsed() {
+  try {
+    const v = localStorage.getItem('orbitals.tableCollapsed');
+    if (v === '1' || v === '0') return v === '1';
+  } catch { /* storage unavailable */ }
+  return matchMedia('(max-width: 640px), (orientation: portrait) and (max-width: 1024px)').matches;
+}
 
 function clampInt(v, lo, hi, dflt) {
   const n = parseInt(v, 10);
@@ -71,6 +89,7 @@ const app = {
     if (!el || !el.supported) return;          // greyed-out elements can't be selected
     state.element = el;
     state.visible = ORBITALS.map(() => true);
+    app.expandedShells = defaultExpandedShells(el);
     updateElement(app);
     dirty = true;
   },
@@ -79,6 +98,7 @@ const app = {
   setGamma(g) { state.gamma = g; syncControls(state); dirty = true; },
   setEqualize(b) { state.equalize = b; syncControls(state); dirty = true; },
   setFixedScale(b) { state.fixedScale = b; syncControls(state); dirty = true; },
+  setRadialMode(m) { state.radialMode = m; radialKey = ''; syncRadialButtons(); dirty = true; },
   setMode(m) { state.mode = m; syncControls(state); dirty = true; },
   setPaused(p) { state.paused = p; syncControls(state); },
   setDebugSeed(b) { state.debugSeed = b; syncControls(state); dirty = true; },
@@ -91,7 +111,20 @@ const app = {
     updateElement(app);
     dirty = true;
   },
+  // Periodic-table strip: collapsed shows only the current row. Remembered
+  // per viewer; starts collapsed on phones.
+  tableCollapsed: loadCollapsed(),
+  setTableCollapsed(b) {
+    app.tableCollapsed = b;
+    try { localStorage.setItem('orbitals.tableCollapsed', b ? '1' : '0'); } catch { /* storage unavailable */ }
+    updateTable(app);
+  },
   expanded: new Set(),
+  expandedShells: defaultExpandedShells(state.element),
+  toggleShell(n) {
+    if (app.expandedShells.has(n)) app.expandedShells.delete(n); else app.expandedShells.add(n);
+    updateElement(app);
+  },
   toggleExpanded(id) {
     if (app.expanded.has(id)) app.expanded.delete(id); else app.expanded.add(id);
     updateElement(app);
@@ -165,8 +198,8 @@ function frame(t) {
     // so it updates once per switch rather than every animation frame.
     const target = viewGeometry(state.element, glCanvas.width, glCanvas.height, state.zoom, state.fixedScale);
     const radialW = document.getElementById('radial').clientWidth;   // redraw after layout changes
-    const key = `${state.element.z}|${state.fixedScale}|${target.halfExtent[1].toFixed(4)}|${radialW}`;
-    if (key !== radialKey) { radialKey = key; radial.draw(state, target); }
+    const key = `${state.element.z}|${state.fixedScale}|${target.halfExtent[1].toFixed(4)}|${radialW}|${state.radialMode}`;
+    if (key !== radialKey) { radialKey = key; radial.draw(state, target); syncRadialButtons(); }
   }
   const dt = t - lastT;
   lastT = t;

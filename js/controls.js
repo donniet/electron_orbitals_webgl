@@ -4,7 +4,7 @@ import { qAxisAngle, qMul, qNormalize } from './math.js';
 
 const RAD_PER_PX = Math.PI / 400;
 export const ZOOM_MIN = 0.25;
-export const ZOOM_MAX = 60;
+export const ZOOM_MAX = 200;
 
 export function clampZoom(z) {
   return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));

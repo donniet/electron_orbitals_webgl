@@ -2,7 +2,7 @@
 
 import { createContext, createProgram, createTableTexture, createEmptyVAO } from './gl.js';
 import { VERT, FRAG } from './shaders.js';
-import { ORBITALS, NUM_ORBITALS, angularCoefs } from './orbitals.js';
+import { ORBITALS, NUM_ORBITALS, angularCoefs, orbitalChroma } from './orbitals.js';
 import { ELEMENTS } from './elements.js';
 import { horizon, viewToAtom, mat3ToGL, momentLookup, columnRef } from './math.js';
 
@@ -169,7 +169,7 @@ export function createRenderer(canvas, tables) {
       blockData[b + 3] = gains[i];
       blockData[b + 4] = l;
       blockData[b + 5] = row;
-      blockData[b + 6] = o.chroma;
+      blockData[b + 6] = orbitalChroma(o, el);
       blockData[b + 7] = 0;
       blockData.set(coefs, b + 8);
     });

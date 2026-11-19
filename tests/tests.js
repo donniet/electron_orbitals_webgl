@@ -4,7 +4,7 @@
 // "PASS n/n" or "FAIL k/n" so headless runs can read it.
 
 import { ELEMENTS, ORBITALS, aufbau, hundFill, stepElement } from '../js/elements.js';
-import { SUBSHELLS, orbitalIndex, orbitalsOf, isValence, angularCoefs } from '../js/orbitals.js';
+import { SUBSHELLS, orbitalIndex, orbitalsOf, isValence, angularCoefs, orbitalChroma } from '../js/orbitals.js';
 import {
   qAxisAngle, qMul, qToMat3, mat3MulVec, viewToAtom, mat3ToGL,
   meanR2, horizon, momentLookup, radialDensity, columnDensity, makeRng, poisson, pcg, hsvToRgb,
@@ -136,9 +136,12 @@ test('valence orbitals: outer shell only', () => {
   assert([...new Set(ids(17))].join() === '3s,3p', ids(17).join());
 });
 
-test('outer p shells are paler (chroma) with the same axis hues', () => {
+test('chroma by depth: valence vivid, inner shells paler; same axis hues', () => {
   const o = id => ORBITALS[orbitalIndex(id)];
-  assert(o('2px').chroma === 1 && o('3px').chroma < 1 && o('4px').chroma < o('3px').chroma);
+  const kr = ELEMENTS[35], ne = ELEMENTS[9];
+  assert(orbitalChroma(o('4px'), kr) === 1 && orbitalChroma(o('3px'), kr) === 0.6 &&
+    orbitalChroma(o('2px'), kr) === 0.35, 'Kr p shells');
+  assert(orbitalChroma(o('2px'), ne) === 1 && orbitalChroma(o('1s'), kr) === 1, 's stays vivid; Ne 2p valence');
   assert(o('2px').hue === o('3px').hue && o('2pz').hue === o('4pz').hue);
 });
 
