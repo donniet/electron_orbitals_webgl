@@ -195,8 +195,8 @@ function infoRow(k, v, title) {
 
 export function updateStatus(state, geo, fps) {
   $('#status').textContent =
-    `horizon 2σ = ${geo.horizon.toFixed(2)} a₀ ` +
-    `(${(geo.horizon * BOHR_PM).toFixed(0)} pm)` + (fps ? `  ·  ${fps.toFixed(0)} fps` : '');
+    `horizon radius ${(geo.horizon * BOHR_PM).toFixed(0)} pm (${geo.horizon.toFixed(2)} a₀)` +
+    (fps ? `  ·  ${fps.toFixed(0)} fps` : '');
 }
 
 // ------------------------------------------------------------ overlay
@@ -222,7 +222,7 @@ export function drawOverlay(canvas, state, geo) {
   ctx.stroke();
   ctx.setLineDash([]);
   ctx.fillStyle = fg;
-  ctx.fillText('2σ', cx + r * 0.707 + 4 * dpr, cy - r * 0.707 - 4 * dpr);
+  ctx.fillText(`${Math.round(geo.horizon * BOHR_PM)} pm`, cx + r * 0.707 + 4 * dpr, cy - r * 0.707 - 4 * dpr);
 
   // Axes gizmo (atom frame axes projected to the screen), bottom-left.
   const m = qToMat3(state.orientation);   // atom -> view

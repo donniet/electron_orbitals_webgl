@@ -118,9 +118,12 @@ export function createRadialPlot(canvas, tooltip, legendEl) {
       ctx.beginPath(); ctx.moveTo(hx + 0.5, M.t); ctx.lineTo(hx + 0.5, M.t + ph); ctx.stroke();
       ctx.setLineDash([]);
       ctx.fillStyle = INK.muted;
-      ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
-      ctx.fillText('2σ', hx + 3, M.t);
+      const label = `${Math.round(geo.horizon * BOHR_PM)} pm`;
+      // Right of the line, or left of it when it would run off the plot.
+      const fits = hx + 3 + ctx.measureText(label).width <= M.l + pw;
+      ctx.textAlign = fits ? 'left' : 'right';
+      ctx.fillText(label, fits ? hx + 3 : hx - 3, M.t);
     }
 
     // curves
