@@ -1,0 +1,54 @@
+{
+  "generator": "tools/gen_tables.py",
+  "format": "float32 little-endian, layout [row][i][channel], RGBA texel per sample",
+  "N": 1024,
+  "uMax": 30.0,
+  "channels": [
+    "I0",
+    "I2",
+    "I4",
+    "unused"
+  ],
+  "rows": [
+    {
+      "name": "1s",
+      "n": 1,
+      "l": 0
+    },
+    {
+      "name": "2s",
+      "n": 2,
+      "l": 0
+    },
+    {
+      "name": "3s",
+      "n": 3,
+      "l": 0
+    },
+    {
+      "name": "4s",
+      "n": 4,
+      "l": 0
+    },
+    {
+      "name": "2p",
+      "n": 2,
+      "l": 1
+    },
+    {
+      "name": "3p",
+      "n": 3,
+      "l": 1
+    },
+    {
+      "name": "4p",
+      "n": 4,
+      "l": 1
+    },
+    {
+      "name": "3d",
+      "n": 3,
+      "l": 2
+    }
+  ]
+}
