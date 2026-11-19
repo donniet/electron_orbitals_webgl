@@ -54,6 +54,14 @@
 
     <section class="controls">
       <h2>Rendering</h2>
+      <div class="row buttons">
+        <button id="pause">Pause</button>
+        <button id="step">Step</button>
+        <button id="reset-view">Reset view</button>
+      </div>
+      <div class="row buttons">
+        <button id="save-png" title="Download the current frame (with the overlay if shown) as a PNG (s)">Save PNG</button>
+      </div>
       <label class="slider">
         <span>Exposure <output id="exposure-val"></output></span>
         <input id="exposure" type="range" min="0" max="100" step="0.5"
@@ -78,14 +86,6 @@
         <span>Background</span>
         <label><input type="radio" name="bgmode" value="dark"> Dark</label>
         <label><input type="radio" name="bgmode" value="white"> White</label>
-      </div>
-      <div class="row buttons">
-        <button id="pause">Pause</button>
-        <button id="step">Step</button>
-        <button id="reset-view">Reset view</button>
-      </div>
-      <div class="row buttons">
-        <button id="save-png" title="Download the current frame (with the overlay if shown) as a PNG (s)">Save PNG</button>
       </div>
       <div class="row">
         <label title="seed = frame number"><input type="checkbox" id="debug-seed"> Debug seed</label>
