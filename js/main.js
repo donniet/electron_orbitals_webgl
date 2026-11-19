@@ -9,7 +9,8 @@
 //   ?equalize=0   show true relative densities (default: equalized)
 //   ?scale=fixed  same view scale for every element (compare sizes)
 
-import { elementByZ, ORBITALS } from './elements.js';
+import { elementByZ, ELEMENTS, ORBITALS } from './elements.js';
+import { isValence } from './orbitals.js';
 import { qAxisAngle, qMul } from './math.js';
 import { createRenderer } from './renderer.js';
 import { loadTables } from './tables.js';
@@ -25,7 +26,7 @@ function defaultOrientation() {
 }
 
 const state = {
-  element: elementByZ(clampInt(params.get('z'), 1, 10, 6)),
+  element: elementByZ(clampInt(params.get('z'), 1, ELEMENTS.length, 6)),
   orientation: defaultOrientation(),
   zoom: 1,
   density: +params.get('density') || 0.15,
@@ -79,7 +80,19 @@ const app = {
   setPaused(p) { state.paused = p; syncControls(state); },
   setDebugSeed(b) { state.debugSeed = b; syncControls(state); dirty = true; },
   setOverlay(b) { state.overlay = b; syncControls(state); dirty = true; },
-  setVisible(i, b) { state.visible[i] = b; dirty = true; },
+  setVisible(i, b) { state.visible[i] = b; updateElement(app); dirty = true; },
+  setVisibleMany(idx, b) { for (const i of idx) state.visible[i] = b; updateElement(app); dirty = true; },
+  showAll() { app.setVisibleMany(ORBITALS.map((o, i) => i), true); },
+  showValence() {
+    state.visible = ORBITALS.map(o => isValence(o, state.element));
+    updateElement(app);
+    dirty = true;
+  },
+  expanded: new Set(),
+  toggleExpanded(id) {
+    if (app.expanded.has(id)) app.expanded.delete(id); else app.expanded.add(id);
+    updateElement(app);
+  },
   resetView() { state.orientation = defaultOrientation(); state.zoom = 1; dirty = true; },
   step() { advance(); dirty = true; },
 };

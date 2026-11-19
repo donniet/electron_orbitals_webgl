@@ -40,26 +40,30 @@ const D_SHAPES = [
   { m: 'z2',    label: 'z²',       Q: [[-Z2, 0, 0], [0, -Z2, 0], [0, 0, 2 * Z2]] },
 ];
 
-// Hues (degrees). s: warm sequence by shell; p: one hue per axis in every
-// shell; d: five hues of their own. Shells beyond 2 are provisional until
-// the period 3/4 colour pass.
-const S_HUE = { 1: 0, 2: 45, 3: 20, 4: 345 };
+// Render colours. Hue encodes the angular shape; `chroma` (0..1) scales an
+// orbital's contribution to the hue vector, so outer p shells read as paler
+// versions of the same axis colour.
+//  s: warm hues by shell (concentric shells stay distinguishable)
+//  p: one hue per axis in every shell, paler with n
+//  d: five hues of their own
+const S_HUE = { 1: 0, 2: 45, 3: 340, 4: 20 };
 const P_HUE = { x: 195, y: 275, z: 125 };
-const D_HUE = { xy: 310, yz: 230, xz: 165, 'x2-y2': 85, z2: 60 };
+const P_CHROMA = { 2: 1, 3: 0.6, 4: 0.35 };
+const D_HUE = { xy: 300, yz: 235, xz: 160, 'x2-y2': 85, z2: 55 };
 
 function makeOrbitals(subshellId) {
   const s = SUBSHELL[subshellId];
   const base = { subshell: s.id, n: s.n, l: s.l, row: s.row };
-  if (s.l === 0) return [{ ...base, id: s.id, m: '', label: s.id, hue: S_HUE[s.n] }];
+  if (s.l === 0) return [{ ...base, id: s.id, m: '', label: s.id, hue: S_HUE[s.n], chroma: 1 }];
   if (s.l === 1) {
     return P_SHAPES.map((p, a) => ({
       ...base, id: s.id + p.m, m: p.m, axis: a, e: p.e,
-      label: `${s.id}<sub>${p.label}</sub>`, hue: P_HUE[p.m],
+      label: `${s.id}<sub>${p.label}</sub>`, hue: P_HUE[p.m], chroma: P_CHROMA[s.n],
     }));
   }
   return D_SHAPES.map(d => ({
     ...base, id: s.id + d.m, m: d.m, Q: d.Q,
-    label: `${s.id}<sub>${d.label}</sub>`, hue: D_HUE[d.m],
+    label: `${s.id}<sub>${d.label}</sub>`, hue: D_HUE[d.m], chroma: 1,
   }));
 }
 
@@ -119,4 +123,13 @@ export function radialDensity(n, l, z, r) {
   const u = k * r;
   const R = radialRefR(n, l, u);
   return k * u * u * R * R;
+}
+
+// Valence orbitals: the outermost shell plus an open (n-1)d subshell.
+export function isValence(orbital, element) {
+  const count = (element.subshells || {})[orbital.subshell] || 0;
+  if (!count) return false;
+  const nMax = Math.max(...ORBITALS.filter((o, i) => element.occupancy[i] > 0).map(o => o.n));
+  if (orbital.n === nMax) return true;
+  return orbital.l === 2 && orbital.n === nMax - 1 && count < 10;
 }

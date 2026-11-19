@@ -37,6 +37,7 @@ uniform vec4  uOrb[NUM_ORBITALS];   // (occupancy (0 = skip), kappa = Z/n, hue i
 uniform ivec2 uKind[NUM_ORBITALS];  // (l, table row)
 uniform vec3  uAxis[NUM_ORBITALS];  // p: sqrt(3/4pi) * lobe axis
 uniform mat3  uQ[NUM_ORBITALS];     // d: quadratic form of the real harmonic
+uniform float uChroma[NUM_ORBITALS]; // weight of the orbital's hue (outer p shells paler)
 
 out vec4 outColor;
 
@@ -130,7 +131,7 @@ void main() {
     int k = poisson(lambda, s);
     float sat = k > 0 ? min(1.0, pow(float(k) / uKMax, uGamma)) : 0.0;
     float h = orb.z * 6.28318530718;
-    chroma += sat * vec2(cos(h), sin(h));
+    chroma += sat * uChroma[i] * vec2(cos(h), sin(h));
     total += sat;
   }
 

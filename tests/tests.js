@@ -3,7 +3,7 @@
 // "PASS n/n" or "FAIL k/n" so headless runs can read it.
 
 import { ELEMENTS, ORBITALS, aufbau, hundFill } from '../js/elements.js';
-import { SUBSHELLS, orbitalIndex, orbitalsOf } from '../js/orbitals.js';
+import { SUBSHELLS, orbitalIndex, orbitalsOf, isValence } from '../js/orbitals.js';
 import {
   qAxisAngle, qMul, qToMat3, mat3MulVec, viewToAtom, mat3ToGL,
   meanR2, horizon, momentLookup, radialDensity, columnDensity, makeRng, poisson, pcg, hsvToRgb,
@@ -90,14 +90,17 @@ test('fixed scale: same view for every element; auto: He ~0.59x H', () => {
   const fH = viewGeometry(H, 400, 300, 1, true), fHe = viewGeometry(He, 400, 300, 1, true);
   near(fH.halfExtent[1], fHe.halfExtent[1], 1e-12);
   near(fH.halfExtent[1], MAX_HORIZON / 0.9, 1e-12);
-  near(MAX_HORIZON, horizon(ELEMENTS[2], ORBITALS), 1e-12, 'Li is largest');
+  const largest = ELEMENTS.reduce((a, e) => (horizon(e, ORBITALS) > horizon(a, ORBITALS) ? e : a));
+  near(MAX_HORIZON, horizon(largest, ORBITALS), 1e-12);
+  assert(ELEMENTS.length > 18 || largest.symbol === 'Na', `largest is ${largest.symbol}`);
   const aH = viewGeometry(H, 400, 300, 1, false), aHe = viewGeometry(He, 400, 300, 1, false);
   near(aHe.halfExtent[1] / aH.halfExtent[1], 1 / 1.688, 1e-9);
 });
 
 // ------------------------------------------------------------ elements
-test('element data: 10 elements, occupancy sums to Z', () => {
-  assert(ELEMENTS.length === 10);
+test('element data: sequential Z, occupancy sums to Z', () => {
+  assert(ELEMENTS.length >= 18, `only ${ELEMENTS.length} elements`);
+  ELEMENTS.forEach((el, i) => assert(el.z === i + 1, `${el.symbol} out of order`));
   for (const el of ELEMENTS) {
     const sum = el.occupancy.reduce((a, b) => a + b, 0);
     assert(sum === el.z, `${el.symbol}: ${sum} != ${el.z}`);
@@ -109,6 +112,29 @@ test("p orbitals fill by Hund's rule", () => {
   const p = z => orbitalsOf('2p').map(i => ELEMENTS[z - 1].occupancy[i]).join('');
   assert(p(5) === '100' && p(6) === '110' && p(7) === '111');
   assert(p(8) === '211' && p(9) === '221' && p(10) === '222');
+});
+
+test("3p fills by Hund's rule (Al..Ar)", () => {
+  const p = z => orbitalsOf('3p').map(i => ELEMENTS[z - 1].occupancy[i]).join('');
+  assert(['100', '110', '111', '211', '221', '222'].every((v, k) => p(13 + k) === v));
+});
+
+test('shorthand configurations', () => {
+  assert(ELEMENTS[10].configShort === '[Ne] 3s¹', ELEMENTS[10].configShort);
+  assert(ELEMENTS[17].configShort === '[Ne] 3s² 3p⁶', ELEMENTS[17].configShort);
+  assert(ELEMENTS[5].configShort === '1s² 2s² 2p²', 'period 2 stays in full');
+});
+
+test('valence orbitals: outer shell only', () => {
+  const ids = z => ORBITALS.filter(o => isValence(o, ELEMENTS[z - 1])).map(o => o.subshell);
+  assert([...new Set(ids(11))].join() === '3s', ids(11).join());
+  assert([...new Set(ids(17))].join() === '3s,3p', ids(17).join());
+});
+
+test('outer p shells are paler (chroma) with the same axis hues', () => {
+  const o = id => ORBITALS[orbitalIndex(id)];
+  assert(o('2px').chroma === 1 && o('3px').chroma < 1 && o('4px').chroma < o('3px').chroma);
+  assert(o('2px').hue === o('3px').hue && o('2pz').hue === o('4pz').hue);
 });
 
 test('electron configurations', () => {

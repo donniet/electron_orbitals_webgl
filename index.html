@@ -8,10 +8,13 @@
 </head>
 <body>
   <main id="stage">
-    <canvas id="gl"></canvas>
-    <canvas id="overlay"></canvas>
-    <div id="error" hidden></div>
-    <div id="status"></div>
+    <nav id="ptable" class="ptable" aria-label="Periodic table"></nav>
+    <div id="view">
+      <canvas id="gl"></canvas>
+      <canvas id="overlay"></canvas>
+      <div id="error" hidden></div>
+      <div id="status"></div>
+    </div>
   </main>
 
   <aside id="panel">
@@ -20,17 +23,19 @@
       <p class="sub">Each frame samples electron detections along every ray from |ψ|².</p>
     </header>
 
-    <section>
-      <div id="ptable" class="ptable"></div>
-    </section>
-
     <section id="element-card" class="card"></section>
 
     <section>
-      <h2>Orbitals</h2>
+      <div class="h2-row">
+        <h2>Orbitals</h2>
+        <div class="seg">
+          <button id="show-all" title="Show every orbital">All</button>
+          <button id="show-valence" title="Show only the outer shell (and an open d subshell)">Valence</button>
+        </div>
+      </div>
       <table id="legend">
         <thead>
-          <tr><th></th><th></th><th>Orbital</th><th>e⁻</th><th class="num">Z<sub>eff</sub></th><th class="num" title="RMS radius √⟨r²⟩">r<sub>rms</sub> pm</th></tr>
+          <tr><th></th><th></th><th>Subshell</th><th>e⁻</th><th class="num">Z<sub>eff</sub></th><th class="num" title="RMS radius √⟨r²⟩">r<sub>rms</sub> pm</th></tr>
         </thead>
         <tbody></tbody>
       </table>

@@ -9,16 +9,22 @@ const BOHR_PM = 52.9177;
 
 // Same hues as the render, stepped to chart-safe lightness for the dark
 // panel (validated: lightness band, CVD separation, contrast vs #151922).
-// One series per subshell. Colours for shells 3-4 are provisional until the
-// period 3/4 colour pass re-validates the palette.
-const CHART_COLORS = {
-  '1s': '#ca1616', '2s': '#b88b05', '2p': '#0f91bd',
-  '3s': '#c2410c', '3p': '#0e7490', '3d': '#a21caf', '4s': '#be123c', '4p': '#155e75',
-};
+// One series per subshell, encoded compositely: colour = shell n (validated
+// on the dark panel, all pairs), line style = l (s solid, p dashed, d dotted).
+const SHELL_COLORS = { 1: '#ca1616', 2: '#b88b05', 3: '#0f91bd', 4: '#8b6cf0' };
+const L_DASH = { 0: [], 1: [6, 3], 2: [1.5, 2.5] };
 export const SERIES = SUBSHELLS.map(sh => ({
-  key: sh.id, label: sh.id, color: CHART_COLORS[sh.id], n: sh.n, l: sh.l,
+  key: sh.id, label: sh.id, color: SHELL_COLORS[sh.n], dash: L_DASH[sh.l], n: sh.n, l: sh.l,
   orbitals: orbitalsOf(sh.id),
 }));
+
+// Small inline line sample for legends/tooltips (same colour + dash as the plot).
+function lineSample(color, dash = []) {
+  const da = dash.length ? ` stroke-dasharray="${dash.join(' ')}"` : '';
+  return `<svg width="18" height="6" aria-hidden="true"><line x1="0" y1="3" x2="18" y2="3" ` +
+    `stroke="${color}" stroke-width="2"${da}/></svg>`;
+}
+
 const INK = { muted: '#8b93a7', faint: '#2a3142', text: '#e6e9f0', total: '#c5cad6' };
 const M = { l: 34, r: 8, t: 10, b: 22 };   // margins, CSS px
 const SAMPLES = 240;
@@ -59,7 +65,7 @@ export function createRadialPlot(canvas, tooltip, legendEl) {
     legendEl.replaceChildren(...items.map(s => {
       const item = document.createElement('span');
       item.className = 'rl-item';
-      item.innerHTML = `<i style="background:${s.color}"></i>${s.label}`;
+      item.innerHTML = `${lineSample(s.color, s.dash)}${s.label}`;
       return item;
     }));
   }
@@ -119,10 +125,11 @@ export function createRadialPlot(canvas, tooltip, legendEl) {
 
     // curves
     const rs = Array.from({ length: SAMPLES + 1 }, (_, i) => (i / SAMPLES) * rMax);
-    const curve = (fn, color, width) => {
+    const curve = (fn, color, width, dash = []) => {
       ctx.strokeStyle = color;
       ctx.lineWidth = width;
       ctx.lineJoin = 'round';
+      ctx.setLineDash(dash);
       ctx.beginPath();
       rs.forEach((r, i) => { const y = Y(Math.min(fn(r), yMax * 1.2)); i ? ctx.lineTo(X(r), y) : ctx.moveTo(X(r), y); });
       ctx.stroke();
@@ -132,7 +139,8 @@ export function createRadialPlot(canvas, tooltip, legendEl) {
     ctx.save();
     ctx.beginPath(); ctx.rect(M.l, M.t - 2, pw, ph + 4); ctx.clip();
     if (active.length > 1) curve(r => totalDensity(el, r), INK.total, 1.25);
-    for (const s of active) curve(r => seriesDensity(el, s, r), s.color, 2);
+    for (const s of active) curve(r => seriesDensity(el, s, r), s.color, 2, s.dash);
+    ctx.setLineDash([]);
     ctx.restore();
 
     // selective direct labels at each series peak (skip if they would collide)
@@ -164,9 +172,9 @@ export function createRadialPlot(canvas, tooltip, legendEl) {
         ctx.strokeStyle = '#151922';
         ctx.lineWidth = 2;
         ctx.beginPath(); ctx.arc(X(r), Y(Math.min(v, yMax)), 4, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
-        rows.push(`<div><i style="background:${s.color}"></i>${s.label}<b>${v.toFixed(3)}</b></div>`);
+        rows.push(`<div>${lineSample(s.color, s.dash)}${s.label}<b>${v.toFixed(3)}</b></div>`);
       }
-      if (active.length > 1) rows.push(`<div><i style="background:${INK.total}"></i>total<b>${totalDensity(el, r).toFixed(3)}</b></div>`);
+      if (active.length > 1) rows.push(`<div>${lineSample(INK.total)}total<b>${totalDensity(el, r).toFixed(3)}</b></div>`);
       tooltip.innerHTML = `<div class="tt-head">r = ${(r * BOHR_PM).toFixed(0)} pm · e⁻/a₀</div>` + rows.join('');
       tooltip.hidden = false;
       const left = hoverX + 12 + tooltip.offsetWidth > cw ? hoverX - 12 - tooltip.offsetWidth : hoverX + 12;

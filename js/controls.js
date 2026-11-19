@@ -44,6 +44,6 @@ export function attachControls(el, { getOrientation, setOrientation, getZoom, se
   el.addEventListener('wheel', e => {
     e.preventDefault();
     const z = getZoom() * Math.exp(-e.deltaY * 0.0015);
-    setZoom(Math.min(8, Math.max(0.25, z)));
+    setZoom(Math.min(60, Math.max(0.25, z)));
   }, { passive: false });
 }

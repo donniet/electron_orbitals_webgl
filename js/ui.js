@@ -2,12 +2,17 @@
 // 2D overlay drawn over the WebGL canvas (horizon ring, axes, scale bar).
 
 import { ELEMENTS, ORBITALS } from './elements.js';
-import { SUBSHELL } from './orbitals.js';
+import { SUBSHELLS, orbitalsOf } from './orbitals.js';
 import { qToMat3, meanR2, hslCss } from './math.js';
 
 const BOHR_PM = 52.9177;
-// Compact periodic table columns: groups 1, 2, 13..18.
-const GROUP_COL = { 1: 1, 2: 2, 13: 3, 14: 4, 15: 5, 16: 6, 17: 7, 18: 8 };
+const CAPACITY = { 0: 2, 1: 6, 2: 10 };
+
+// Swatch colour for an orbital: paler for low-chroma (outer-shell) orbitals,
+// approximating how they read in the render.
+function orbitalCss(o) {
+  return hslCss(o.hue, Math.round(90 * o.chroma), Math.round(55 + 25 * (1 - o.chroma)));
+}
 
 const $ = sel => document.querySelector(sel);
 
@@ -35,7 +40,7 @@ export function buildUI(app) {
       class: `pt-cell ${categoryClass(el.category)}`,
       title: el.name,
       'data-z': el.z,
-      style: `grid-column: ${GROUP_COL[el.group]}; grid-row: ${el.period}`,
+      style: `grid-column: ${el.group}; grid-row: ${el.period}`,
       onclick: () => app.setElement(el.z),
     },
     h('span', { class: 'pt-z' }, String(el.z)),
@@ -60,10 +65,12 @@ export function buildUI(app) {
   $('#debug-seed').addEventListener('change', e => app.setDebugSeed(e.target.checked));
   $('#show-overlay').addEventListener('change', e => app.setOverlay(e.target.checked));
   $('#reset-view').addEventListener('click', () => app.resetView());
+  $('#show-all').addEventListener('click', () => app.showAll());
+  $('#show-valence').addEventListener('click', () => app.showValence());
 
   window.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT') return;
-    if (e.key === 'ArrowRight') app.setElement(Math.min(10, app.state.element.z + 1));
+    if (e.key === 'ArrowRight') app.setElement(Math.min(ELEMENTS.length, app.state.element.z + 1));
     else if (e.key === 'ArrowLeft') app.setElement(Math.max(1, app.state.element.z - 1));
     else if (e.key === ' ') { e.preventDefault(); app.setPaused(!app.state.paused); }
     else if (e.key === 'r') app.resetView();
@@ -109,38 +116,69 @@ export function updateElement(app) {
     h('div', { class: 'card-info' },
       h('div', { class: 'card-name' }, el.name),
       h('div', { class: 'card-cat' }, el.category),
-      infoRow('Configuration', el.config),
+      infoRow('Configuration', el.configShort, el.config),
       infoRow('Period / Group', `${el.period} / ${el.group}`),
       infoRow('Electronegativity', el.electronegativity == null ? '—' : el.electronegativity.toFixed(2)),
       infoRow('1st ionization', `${el.ionizationEnergy.toFixed(3)} eV`)),
   );
 
-  // Show the subshells of every period up to this element's (at least 2).
+  // Subshells of every period up to this element's (at least 2), grouped;
+  // p and d rows expand to their individual orbitals.
   const maxPeriod = Math.max(2, el.period);
-  const rows = ORBITALS.map((o, i) => [o, i])
-    .filter(([o]) => SUBSHELL[o.subshell].period <= maxPeriod)
-    .map(([o, i]) => {
-    const occ = el.occupancy[i];
-    const z = el.zeff[i];
-    const pips = occ === 0 ? '—' : (occ === 2 ? '↑↓' : '↑');
-    const r = occ ? Math.sqrt(meanR2(o.n, o.l, z)) : null;
-    const cb = h('input', { type: 'checkbox', title: 'Show / hide this orbital' });
-    cb.checked = state.visible[i];
+  const rows = [];
+  for (const sh of SUBSHELLS.filter(x => x.period <= maxPeriod)) {
+    const idx = orbitalsOf(sh.id);
+    const occ = idx.reduce((a, i) => a + el.occupancy[i], 0);
+    const z = el.zeffBySubshell[sh.id];
+    const r = occ ? Math.sqrt(meanR2(sh.n, sh.l, z)) : null;
+    const shown = idx.filter(i => state.visible[i]).length;
+
+    const cb = h('input', { type: 'checkbox', title: 'Show / hide this subshell' });
+    cb.checked = shown === idx.length;
+    cb.indeterminate = shown > 0 && shown < idx.length;
     cb.disabled = occ === 0;
-    cb.addEventListener('change', () => app.setVisible(i, cb.checked));
-    return h('tr', { class: occ ? '' : 'empty' },
+    cb.addEventListener('change', () => app.setVisibleMany(idx, cb.checked));
+
+    const expandable = sh.l > 0 && occ > 0;
+    const open = expandable && app.expanded.has(sh.id);
+    const caret = expandable
+      ? h('button', { class: 'caret', title: open ? 'Collapse' : 'Show individual orbitals',
+          'aria-expanded': String(open), onclick: () => app.toggleExpanded(sh.id) }, open ? '▾' : '▸')
+      : h('span', { class: 'caret' });
+
+    rows.push(h('tr', { class: occ ? '' : 'empty' },
       h('td', {}, cb),
-      h('td', {}, h('span', { class: 'swatch', style: `background:${hslCss(o.hue)}` })),
-      h('td', { class: 'orb-label', html: o.label }),
-      h('td', { class: 'pips' }, pips),
+      h('td', { class: 'swatches' }, ...idx.map(i =>
+        h('span', { class: 'swatch', style: `background:${orbitalCss(ORBITALS[i])}` }))),
+      h('td', { class: 'orb-label' }, caret, sh.id),
+      h('td', { class: 'num' }, occ ? `${occ}/${CAPACITY[sh.l]}` : '—'),
       h('td', { class: 'num' }, occ ? z.toFixed(3) : ''),
-      h('td', { class: 'num' }, occ ? (r * BOHR_PM).toFixed(0) : ''));
-  });
+      h('td', { class: 'num' }, occ ? (r * BOHR_PM).toFixed(0) : '')));
+
+    if (open) {
+      for (const i of idx) {
+        const o = ORBITALS[i];
+        const n = el.occupancy[i];
+        const ocb = h('input', { type: 'checkbox', title: 'Show / hide this orbital' });
+        ocb.checked = state.visible[i];
+        ocb.disabled = n === 0;
+        ocb.addEventListener('change', () => app.setVisible(i, ocb.checked));
+        rows.push(h('tr', { class: 'child' + (n ? '' : ' empty') },
+          h('td', {}, ocb),
+          h('td', { class: 'swatches' }, h('span', { class: 'swatch', style: `background:${orbitalCss(o)}` })),
+          h('td', { class: 'orb-label', html: o.label }),
+          h('td', { class: 'pips' }, n === 0 ? '—' : (n === 2 ? '↑↓' : '↑')),
+          h('td', {}), h('td', {})));
+      }
+    }
+  }
   $('#legend tbody').replaceChildren(...rows);
 }
 
-function infoRow(k, v) {
-  return h('div', { class: 'info-row' }, h('span', { class: 'k' }, k), h('span', { class: 'v' }, v));
+function infoRow(k, v, title) {
+  const val = h('span', { class: 'v' }, v);
+  if (title) val.title = title;
+  return h('div', { class: 'info-row' }, h('span', { class: 'k' }, k), val);
 }
 
 export function updateStatus(state, geo, fps) {
@@ -208,5 +246,5 @@ export function drawOverlay(canvas, state, geo) {
   ctx.font = `600 ${28 * dpr}px system-ui, sans-serif`;
   ctx.fillText(state.element.symbol, 20 * dpr, 44 * dpr);
   ctx.font = `${12 * dpr}px system-ui, sans-serif`;
-  ctx.fillText(`${state.element.name} · ${state.element.config}`, 20 * dpr, 64 * dpr);
+  ctx.fillText(`${state.element.name} · ${state.element.configShort}`, 20 * dpr, 64 * dpr);
 }

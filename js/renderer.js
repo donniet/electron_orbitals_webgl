@@ -116,6 +116,8 @@ export function createRenderer(canvas, tables) {
     return Array.from(mat3ToGL(Q));
   })));
 
+  gl.uniform1fv(u.uChroma, new Float32Array(ORBITALS.map(o => o.chroma)));
+
   const orbBuf = new Float32Array(4 * NUM_ORBITALS);
 
   /**
