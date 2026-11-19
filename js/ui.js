@@ -173,6 +173,18 @@ export function updateElement(app) {
     }
   }
   $('#legend tbody').replaceChildren(...rows);
+
+  // Partly filled p/d subshells: which orbitals hold the electrons is one of
+  // several equivalent (degenerate) choices; say which convention is shown.
+  const partial = SUBSHELLS.filter(sh => sh.l > 0 &&
+    (el.subshells[sh.id] || 0) > 0 && el.subshells[sh.id] < CAPACITY[sh.l]);
+  const note = $('#fill-note');
+  note.hidden = partial.length === 0;
+  if (partial.length) {
+    const order = partial.map(sh => (sh.l === 1 ? 'p: x, y, z' : 'd: xy, yz, xz, x²−y², z²'));
+    note.textContent = `Partly filled ${partial.map(sh => sh.id).join(', ')}: shown is one of several ` +
+      `equivalent fillings (Hund's rule in the order ${[...new Set(order)].join('; ')}).`;
+  }
 }
 
 function infoRow(k, v, title) {

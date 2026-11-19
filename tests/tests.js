@@ -8,7 +8,7 @@ import {
   qAxisAngle, qMul, qToMat3, mat3MulVec, viewToAtom, mat3ToGL,
   meanR2, horizon, momentLookup, radialDensity, columnDensity, makeRng, poisson, pcg, hsvToRgb,
 } from '../js/math.js';
-import { createRenderer, viewGeometry, orbitalPeak, orbitalGains, MAX_HORIZON } from '../js/renderer.js';
+import { createRenderer, viewGeometry, orbitalPeak, orbitalGains, MAX_HORIZON, shapePeak } from '../js/renderer.js';
 import { loadTables } from '../js/tables.js';
 
 const TABLES = await loadTables();
@@ -92,7 +92,8 @@ test('fixed scale: same view for every element; auto: He ~0.59x H', () => {
   near(fH.halfExtent[1], MAX_HORIZON / 0.9, 1e-12);
   const largest = ELEMENTS.reduce((a, e) => (horizon(e, ORBITALS) > horizon(a, ORBITALS) ? e : a));
   near(MAX_HORIZON, horizon(largest, ORBITALS), 1e-12);
-  assert(ELEMENTS.length > 18 || largest.symbol === 'Na', `largest is ${largest.symbol}`);
+  const want = ELEMENTS.length > 18 ? 'K' : 'Na';
+  assert(largest.symbol === want, `largest is ${largest.symbol}`);
   const aH = viewGeometry(H, 400, 300, 1, false), aHe = viewGeometry(He, 400, 300, 1, false);
   near(aHe.halfExtent[1] / aH.halfExtent[1], 1 / 1.688, 1e-9);
 });
@@ -135,6 +136,42 @@ test('outer p shells are paler (chroma) with the same axis hues', () => {
   const o = id => ORBITALS[orbitalIndex(id)];
   assert(o('2px').chroma === 1 && o('3px').chroma < 1 && o('4px').chroma < o('3px').chroma);
   assert(o('2px').hue === o('3px').hue && o('2pz').hue === o('4pz').hue);
+});
+
+test('period 4: Cr and Cu exceptions, shorthand', () => {
+  assert(ELEMENTS.length === 36, `${ELEMENTS.length} elements`);
+  const cfg = z => ELEMENTS[z - 1].configShort;
+  assert(cfg(19) === '[Ar] 4s¹', cfg(19));
+  assert(cfg(24) === '[Ar] 3d⁵ 4s¹', cfg(24));
+  assert(cfg(26) === '[Ar] 3d⁶ 4s²', cfg(26));
+  assert(cfg(29) === '[Ar] 3d¹⁰ 4s¹', cfg(29));
+  assert(cfg(36) === '[Ar] 3d¹⁰ 4s² 4p⁶', cfg(36));
+  const d = z => orbitalsOf('3d').map(i => ELEMENTS[z - 1].occupancy[i]).join('');
+  assert(d(21) === '10000' && d(24) === '11111' && d(26) === '21111' && d(30) === '22222');
+  const ids = z => [...new Set(ORBITALS.filter(o => isValence(o, ELEMENTS[z - 1])).map(o => o.subshell))].sort().join();
+  assert(ids(26) === '3d,4s' && ids(30) === '4s' && ids(31) === '4p,4s', `${ids(26)} | ${ids(30)} | ${ids(31)}`);
+});
+
+test('d peak search is not beaten by random rays', () => {
+  const rand = makeRng(77);
+  for (const id of ['3dxy', '3dz2']) {
+    const i = orbitalIndex(id);
+    let best = 0;
+    for (let k = 0; k < 3000; k++) {
+      // random direction, random closest point perpendicular to it
+      const z = 2 * rand() - 1, ph = 2 * Math.PI * rand(), r = Math.sqrt(1 - z * z);
+      const d = [r * Math.cos(ph), r * Math.sin(ph), z];
+      let q = [rand() - 0.5, rand() - 0.5, rand() - 0.5];
+      const t = q[0] * d[0] + q[1] * d[1] + q[2] * d[2];
+      q = q.map((c, j) => c - t * d[j]);
+      const n = Math.hypot(...q), u = 6 * rand();
+      const P = q.map(c => (c / n) * u);
+      best = Math.max(best, columnDensity(TABLES, ORBITALS[i], 3, P, d));   // kappa = 1
+    }
+    const peak = shapePeak(TABLES, i);
+    assert(peak >= 0.97 * best, `${id}: search peak ${peak} < random best ${best}`);
+    assert(peak <= 1.3 * best, `${id}: search peak ${peak} >> random best ${best}`);
+  }
 });
 
 test('electron configurations', () => {
@@ -257,10 +294,10 @@ function renderFrame(z, opts = {}) {
   canvas.width = 256; canvas.height = 256;
   const r = createRenderer(canvas, TABLES);
   const state = {
-    element: ELEMENTS[z - 1], orientation: opts.q || [0, 0, 0, 1], zoom: 1,
+    element: ELEMENTS[z - 1], orientation: opts.q || [0, 0, 0, 1], zoom: opts.zoom ?? 1,
     seed: opts.seed ?? 1, density: opts.density ?? 0.3,
     equalize: opts.equalize ?? false, kMax: opts.kMax ?? 4, gamma: opts.gamma ?? 0.5,
-    mode: opts.mode || 'dark', visible: ORBITALS.map(() => true), fixedScale: opts.fixedScale ?? false,
+    mode: opts.mode || 'dark', visible: opts.visible || ORBITALS.map(() => true), fixedScale: opts.fixedScale ?? false,
   };
   r.render(state);
   const px = new Uint8Array(256 * 256 * 4);
@@ -334,7 +371,7 @@ test('GPU: fixed scale shows He smaller than H', () => {
     const r0 = 2.1 / g.bohrPerPixel, r1 = 2.9 / g.bohrPerPixel;
     let sum = 0, n = 0;
     for (let s = 1; s <= 4; s++) {
-      const px = renderFrame(z, { seed: s, fixedScale: true, density: 1, kMax: 1 });
+      const px = renderFrame(z, { seed: s, fixedScale: true, density: 0.2, kMax: 1 });
       for (let y = 0; y < 256; y++) for (let x = 0; x < 256; x++) {
         const r = Math.hypot(x - 127.5, y - 127.5);
         if (r >= r0 && r < r1) { sum += brightness(px, x, y); n++; }
@@ -344,6 +381,25 @@ test('GPU: fixed scale shows He smaller than H', () => {
   };
   const h = ring(1), he = ring(2);
   assert(h > 2 * he, `H ring ${h} vs He ring ${he}`);
+});
+
+test('GPU: Sc 3d_xy viewed down z is a four-leaf clover', () => {
+  const i = orbitalIndex('3dxy');
+  const visible = ORBITALS.map((o, j) => j === i);
+  const sc = ELEMENTS[20];
+  const zoom = 6;                               // resolve the small 3d lobes
+  const g = viewGeometry(sc, 256, 256, zoom);
+  const r = Math.round(0.9 / g.bohrPerPixel);   // ~ lobe distance (a0)
+  let diag = 0, axes = 0;
+  for (let s = 1; s <= 4; s++) {
+    const px = renderFrame(21, { seed: s, equalize: true, density: 0.3, visible, zoom });
+    const c = 128, k = Math.round(r / Math.SQRT2);
+    for (let o = -4; o <= 4; o++) for (let t = -4; t <= 4; t++) {
+      for (const [sx, sy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) diag += brightness(px, c + sx * k + o, c + sy * k + t);
+      for (const [ax, ay] of [[r, 0], [-r, 0], [0, r], [0, -r]]) axes += brightness(px, c + ax + o, c + ay + t);
+    }
+  }
+  assert(diag > 3 * axes, `diagonals ${diag} vs axes ${axes}`);
 });
 
 test('GPU: white mode background is white', () => {

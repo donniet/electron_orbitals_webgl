@@ -39,11 +39,10 @@ function searchPeakD(tables, orbital) {
   return best;
 }
 
-export function shapePeaks(tables) {
-  if (PEAK_CACHE.has(tables)) return PEAK_CACHE.get(tables);
+function computePeak(tables, o) {
   const du = tables.uMax / (tables.N - 1);
-  const peaks = ORBITALS.map(o => {
-    if (o.l === 2) return searchPeakD(tables, o);
+  if (o.l === 2) return searchPeakD(tables, o);
+  {
     let best = 0;
     for (let i = 0; i < tables.N; i++) {
       const u = i * du;
@@ -52,15 +51,23 @@ export function shapePeaks(tables) {
       else best = Math.max(best, u * u * I0, momentLookup(tables, o.row, 2, u));
     }
     return o.l === 1 ? best * (3 / (4 * Math.PI)) : best;
-  });
-  PEAK_CACHE.set(tables, peaks);
-  return peaks;
+  }
+}
+
+// Reference-unit peak of orbital shape i, computed lazily (the d search
+// takes a moment, so atoms without d electrons never pay for it).
+export function shapePeak(tables, i) {
+  if (!PEAK_CACHE.has(tables)) PEAK_CACHE.set(tables, new Array(ORBITALS.length).fill(null));
+  const peaks = PEAK_CACHE.get(tables);
+  if (peaks[i] === null) peaks[i] = computePeak(tables, ORBITALS[i]);
+  return peaks[i];
 }
 
 // Peak column density (electrons / Bohr^2) of orbital i of `element`.
 export function orbitalPeak(tables, element, i) {
+  if (!element.occupancy[i]) return 0;
   const k = element.zeff[i] / ORBITALS[i].n;
-  return element.occupancy[i] * k * k * shapePeaks(tables)[i];
+  return element.occupancy[i] * k * k * shapePeak(tables, i);
 }
 
 // In equalized mode the exposure value `density` maps to this peak count.
