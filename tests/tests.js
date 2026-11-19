@@ -1,4 +1,5 @@
-// In-browser tests. Open http://localhost:8000/tests/test.html
+// In-browser tests. Serve the repo root (python3 -m http.server 8000) and open
+// http://localhost:8000/tests/test.html
 // Results are written into the page; document.title becomes
 // "PASS n/n" or "FAIL k/n" so headless runs can read it.
 

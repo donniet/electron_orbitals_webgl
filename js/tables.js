@@ -13,7 +13,8 @@ export async function loadTables(base = DEFAULT_BASE) {
   ]);
   if (!metaRes.ok || !binRes.ok) {
     throw new Error(`Could not load orbital tables (${metaRes.status}/${binRes.status}). ` +
-      'Run python3 tools/gen_tables.py and serve the repository root.');
+      'Run python3 tools/gen_tables.py and serve the repository root ' +
+      '(python3 -m http.server 8000).');
   }
   const meta = await metaRes.json();
   const buf = await binRes.arrayBuffer();

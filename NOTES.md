@@ -35,3 +35,17 @@ that atom.
 
 This should be written in pure javascript/HTML/CSS with no libraries or
 dependencies and a simple python server used for the dev server and any testing.
+
+# Running
+
+Serve the repository root with Python's built-in server:
+
+    python3 -m http.server 8000
+
+Then open http://localhost:8000/ for the app and
+http://localhost:8000/tests/test.html for the in-browser tests. Python tests:
+`python3 -m unittest discover tests`. Regenerate the orbital tables with
+`python3 tools/gen_tables.py --verify`.
+
+http.server does not send no-cache headers, so hard-reload (Ctrl+Shift+R)
+after editing files if the browser shows stale code.
