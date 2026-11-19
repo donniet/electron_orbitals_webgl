@@ -106,6 +106,14 @@ h2 {
 
 footer { color: var(--muted); font-size: 11px; margin-top: auto; }
 
+/* Rendering controls, set apart from the physical data above by a
+   full-width divider (bleeds through the panel's 16px side padding). */
+.controls {
+  border-top: 1px solid var(--border);
+  margin: 4px -16px 0;
+  padding: 16px 16px 0;
+}
+
 /* ---------------------------------------------------------------- periodic table */
 .ptable {
   display: grid;
