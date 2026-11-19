@@ -96,6 +96,23 @@ const app = {
   },
   resetView() { state.orientation = defaultOrientation(); state.zoom = 1; dirty = true; },
   step() { advance(); dirty = true; },
+  // Download what is on screen: the WebGL frame (kept by
+  // preserveDrawingBuffer) plus the 2D overlay when it is shown.
+  savePng() {
+    const out = document.createElement('canvas');
+    out.width = glCanvas.width;
+    out.height = glCanvas.height;
+    const ctx = out.getContext('2d');
+    ctx.drawImage(glCanvas, 0, 0);
+    if (state.overlay) ctx.drawImage(overlay, 0, 0);
+    out.toBlob(blob => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `orbitals-${state.element.symbol}-${state.mode}.png`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }, 'image/png');
+  },
 };
 
 attachControls(glCanvas, {

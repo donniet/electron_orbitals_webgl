@@ -436,6 +436,30 @@ test('GPU: Sc 3d_xy viewed down z is a four-leaf clover', () => {
   assert(diag > 3 * axes, `diagonals ${diag} vs axes ${axes}`);
 });
 
+test('GPU: white mode is the exact dual of dark mode', () => {
+  // white = 1 - dark(hue + 180deg). For an HSV colour, rotating the hue by
+  // 180deg maps each channel x -> max + min - x, so per pixel:
+  //   white = 255 - (max + min - dark)
+  const opts = { seed: 3, equalize: true, density: 0.3 };
+  const dark = renderFrame(8, { ...opts, mode: 'dark' });
+  const white = renderFrame(8, { ...opts, mode: 'white' });
+  let lit = 0, worst = 0, overlapDarker = 0, overlaps = 0;
+  for (let i = 0; i < dark.length; i += 4) {
+    const d = [dark[i], dark[i + 1], dark[i + 2]];
+    const M = Math.max(...d), m = Math.min(...d);
+    if (M > 0) lit++;
+    for (let c = 0; c < 3; c++) worst = Math.max(worst, Math.abs(white[i + c] - (255 - (M + m - d[c]))));
+    // low-saturation dark pixels (hue mixes) must be darker than paper in white
+    if (M > 100 && M - m < 0.3 * M) {
+      overlaps++;
+      if (white[i] + white[i + 1] + white[i + 2] < 3 * 255 - 100) overlapDarker++;
+    }
+  }
+  assert(lit > 2000, `too few lit pixels ${lit}`);
+  assert(worst <= 3, `max channel deviation ${worst}`);
+  assert(overlaps === 0 || overlapDarker === overlaps, `${overlapDarker}/${overlaps} mixes darker`);
+});
+
 test('GPU: white mode background is white', () => {
   const px = renderFrame(1, { mode: 'white' });
   assert(brightness(px, 2, 2) === 765, 'corner not white');

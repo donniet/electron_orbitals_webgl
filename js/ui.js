@@ -65,6 +65,7 @@ export function buildUI(app) {
   $('#debug-seed').addEventListener('change', e => app.setDebugSeed(e.target.checked));
   $('#show-overlay').addEventListener('change', e => app.setOverlay(e.target.checked));
   $('#reset-view').addEventListener('click', () => app.resetView());
+  $('#save-png').addEventListener('click', () => app.savePng());
   $('#show-all').addEventListener('click', () => app.showAll());
   $('#show-valence').addEventListener('click', () => app.showValence());
 
@@ -74,6 +75,7 @@ export function buildUI(app) {
     else if (e.key === 'ArrowLeft') app.setElement(Math.max(1, app.state.element.z - 1));
     else if (e.key === ' ') { e.preventDefault(); app.setPaused(!app.state.paused); }
     else if (e.key === 'r') app.resetView();
+    else if (e.key === 's') app.savePng();
   });
 }
 

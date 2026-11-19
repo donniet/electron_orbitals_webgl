@@ -141,12 +141,16 @@ void main() {
 
   vec3 rgb;
   if (uMode == 0) {
-    // Dark: detections light up in the orbital hue.
+    // Dark (light on black): detections emit in the orbital hue; overlaps
+    // mix toward white.
     rgb = hsv2rgb(vec3(hue, purity, amount));
   } else {
-    // White (literal): count drives saturation at full value. Hue mixes
-    // that cancel (low purity) are darkened slightly so they stay visible.
-    rgb = hsv2rgb(vec3(hue, amount * purity, 1.0 - 0.35 * amount * (1.0 - purity)));
+    // White (ink on paper): the exact dual of the dark image -- the negative
+    // of the dark image computed with every hue rotated 180 degrees. Rotating
+    // all orbital hues rotates the summed hue vector, so that is just
+    // hue + 1/2. A single detection becomes its orbital colour as ink, empty
+    // space is white, and overlaps mix toward black.
+    rgb = vec3(1.0) - hsv2rgb(vec3(fract(hue + 0.5), purity, amount));
   }
   outColor = vec4(rgb, 1.0);
 }
