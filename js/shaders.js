@@ -18,7 +18,7 @@ precision highp sampler2D;
 
 #define NUM_ORBITALS ${NUM_ORBITALS}
 
-// Moment tables: row r, texel i = (I0, I2, I4, 0) of radial function r at
+// Moment tables: row r, texel i = (I0, I2, I4, I6) of radial function r at
 // scaled impact parameter u = i * uTableUMax / (uTableN - 1), u = Z b / n.
 uniform sampler2D uTables;
 uniform int   uTableN;
@@ -32,12 +32,19 @@ uniform float uKMax;         // detections giving full brightness
 uniform float uGamma;        // tone curve: amount = (k / uKMax)^uGamma
 uniform int   uMode;         // 0 = dark background, 1 = white background
 
-// Per orbital (packed to stay well inside the uniform-vector budget):
-uniform vec4  uOrb[NUM_ORBITALS];   // (occupancy (0 = skip), kappa = Z/n, hue in [0,1), gain)
-uniform ivec2 uKind[NUM_ORBITALS];  // (l, table row)
-uniform vec3  uAxis[NUM_ORBITALS];  // p: sqrt(3/4pi) * lobe axis
-uniform mat3  uQ[NUM_ORBITALS];     // d: quadratic form of the real harmonic
-uniform float uChroma[NUM_ORBITALS]; // weight of the orbital's hue (outer p shells paler)
+// Occupied, visible orbitals, packed into the first uCount slots of a
+// uniform block (std140) in canonical order.
+struct Orbital {
+  vec4 orb;    // (occupancy, kappa = Z/n, hue in [0,1), gain)
+  vec4 kind;   // (l, table row, chroma, unused)
+  vec4 c0;     // angular coefficients (see js/orbitals.js angularCoefs):
+  vec4 c1;     //  p: e.xyz; d: q00 q01 q02 q11 | q12 q22;
+  vec4 c2;     //  f: c000 c001 c002 c011 | c012 c022 c111 c112 | c122 c222
+};
+layout(std140) uniform Orbitals {
+  Orbital uOrbitals[NUM_ORBITALS];
+};
+uniform int uCount;
 
 out vec4 outColor;
 
@@ -89,18 +96,35 @@ vec4 momentAt(int row, float u) {
 //  s: I0 / 4pi
 //  p: (e.P)^2 I0 + (e.d)^2 I2
 //  d: a^2 I0 + (4 beta^2 + 2 a c) I2 + c^2 I4,  a = PQP, beta = PQd, c = dQd
-float columnRef(int i, vec3 P, vec3 d) {
-  ivec2 kind = uKind[i];
-  vec4 m = momentAt(kind.y, length(P));
-  if (kind.x == 0) return m.x * 0.0795774715459;   // 1 / (4 pi)
-  if (kind.x == 1) {
-    float ep = dot(uAxis[i], P), ed = dot(uAxis[i], d);
+//  f: a0^2 I0 + (a1^2 + 2 a0 a2) I2 + (a2^2 + 2 a1 a3) I4 + a3^2 I6,
+//     a0 = C(P,P,P), a1 = 3C(P,P,d), a2 = 3C(P,d,d), a3 = C(d,d,d)
+float columnRef(Orbital o, vec3 P, vec3 d) {
+  int l = int(o.kind.x + 0.5);
+  vec4 m = momentAt(int(o.kind.y + 0.5), length(P));
+  if (l == 0) return m.x * 0.0795774715459;   // 1 / (4 pi)
+  if (l == 1) {
+    float ep = dot(o.c0.xyz, P), ed = dot(o.c0.xyz, d);
     return ep * ep * m.x + ed * ed * m.y;
   }
-  mat3 Q = uQ[i];
-  vec3 Qd = Q * d;
-  float a = dot(P, Q * P), beta = dot(P, Qd), c = dot(d, Qd);
-  return a * a * m.x + (4.0 * beta * beta + 2.0 * a * c) * m.y + c * c * m.z;
+  if (l == 2) {
+    mat3 Q = mat3(o.c0.x, o.c0.y, o.c0.z,
+                  o.c0.y, o.c0.w, o.c1.x,
+                  o.c0.z, o.c1.x, o.c1.y);
+    vec3 Qd = Q * d;
+    float a = dot(P, Q * P), beta = dot(P, Qd), c = dot(d, Qd);
+    return a * a * m.x + (4.0 * beta * beta + 2.0 * a * c) * m.y + c * c * m.z;
+  }
+  // f: contract the cubic tensor once with P and once with d
+  //   C(a, b, c) = b . M(a) c,  M(a) = a.x Cx + a.y Cy + a.z Cz
+  mat3 Cx = mat3(o.c0.x, o.c0.y, o.c0.z,  o.c0.y, o.c0.w, o.c1.x,  o.c0.z, o.c1.x, o.c1.y);
+  mat3 Cy = mat3(o.c0.y, o.c0.w, o.c1.x,  o.c0.w, o.c1.z, o.c1.w,  o.c1.x, o.c1.w, o.c2.x);
+  mat3 Cz = mat3(o.c0.z, o.c1.x, o.c1.y,  o.c1.x, o.c1.w, o.c2.x,  o.c1.y, o.c2.x, o.c2.y);
+  mat3 MP = P.x * Cx + P.y * Cy + P.z * Cz;
+  mat3 Md = d.x * Cx + d.y * Cy + d.z * Cz;
+  vec3 MPd = MP * d;
+  float a0 = dot(P, MP * P), a1 = 3.0 * dot(P, MPd), a2 = 3.0 * dot(d, MPd), a3 = dot(d, Md * d);
+  return a0 * a0 * m.x + (a1 * a1 + 2.0 * a0 * a2) * m.y +
+         (a2 * a2 + 2.0 * a1 * a3) * m.z + a3 * a3 * m.w;
 }
 
 vec3 hsv2rgb(vec3 c) {
@@ -123,15 +147,16 @@ void main() {
   float total = 0.0;
 
   for (int i = 0; i < NUM_ORBITALS; i++) {
-    vec4 orb = uOrb[i];
-    if (orb.x <= 0.0) continue;
+    if (i >= uCount) break;
+    Orbital o = uOrbitals[i];
+    vec4 orb = o.orb;
     float kappa = orb.y;
-    float col = kappa * kappa * columnRef(i, kappa * p, d);
+    float col = kappa * kappa * columnRef(o, kappa * p, d);
     float lambda = orb.x * col * orb.w;
     int k = poisson(lambda, s);
     float sat = k > 0 ? min(1.0, pow(float(k) / uKMax, uGamma)) : 0.0;
     float h = orb.z * 6.28318530718;
-    chroma += sat * uChroma[i] * vec2(cos(h), sin(h));
+    chroma += sat * o.kind.z * vec2(cos(h), sin(h));
     total += sat;
   }
 

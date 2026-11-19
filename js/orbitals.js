@@ -16,11 +16,18 @@ export const SUBSHELLS = [
   { id: '3d', n: 3, l: 2, period: 4, row: 7 },
   { id: '4s', n: 4, l: 0, period: 4, row: 3 },
   { id: '4p', n: 4, l: 1, period: 4, row: 6 },
+  { id: '4d', n: 4, l: 2, period: 5, row: 12 },
+  { id: '4f', n: 4, l: 3, period: 6, row: 14 },
+  { id: '5s', n: 5, l: 0, period: 5, row: 8 },
+  { id: '5p', n: 5, l: 1, period: 5, row: 10 },
+  { id: '5d', n: 5, l: 2, period: 6, row: 13 },
+  { id: '6s', n: 6, l: 0, period: 6, row: 9 },
+  { id: '6p', n: 6, l: 1, period: 6, row: 11 },
 ];
 export const SUBSHELL = Object.fromEntries(SUBSHELLS.map(s => [s.id, s]));
 
 // Aufbau filling order.
-export const AUFBAU = ['1s', '2s', '2p', '3s', '3p', '4s', '3d', '4p'];
+export const AUFBAU = ['1s', '2s', '2p', '3s', '3p', '4s', '3d', '4p', '5s', '4d', '5p', '6s', '4f', '5d', '6p'];
 
 const P_NORM = Math.sqrt(3 / (4 * Math.PI));
 const S15 = Math.sqrt(15 / (4 * Math.PI)) / 2;
@@ -40,16 +47,46 @@ const D_SHAPES = [
   { m: 'z2',    label: 'z²',       Q: [[-Z2, 0, 0], [0, -Z2, 0], [0, 0, 2 * Z2]] },
 ];
 
+// f: real l = 3 harmonics as symmetric cubic tensors C (C(x,x,x)/r^3 = Y_3m),
+// built from monomials {[ex, ey, ez]: coefficient}. Hund fill order follows
+// this list. Mirrors tools/orbitals.py.
+function cubicTensor(monomials) {
+  const C = [0, 1, 2].map(() => [0, 1, 2].map(() => [0, 0, 0]));
+  for (const [exps, coef] of monomials) {
+    const idx = [];
+    exps.forEach((e, ax) => { for (let k = 0; k < e; k++) idx.push(ax); });
+    const perms = new Set();
+    for (const [a, b, c] of [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]]) {
+      perms.add(`${idx[a]}${idx[b]}${idx[c]}`);
+    }
+    for (const key of perms) C[+key[0]][+key[1]][+key[2]] += coef / perms.size;
+  }
+  return C;
+}
+const FA = Math.sqrt(7 / (16 * Math.PI)), FB = Math.sqrt(21 / (32 * Math.PI));
+const FC = Math.sqrt(105 / (4 * Math.PI)), FD = Math.sqrt(105 / (16 * Math.PI));
+const FE = Math.sqrt(35 / (32 * Math.PI));
+const F_SHAPES = [
+  { m: 'z3',        label: 'z³',        C: cubicTensor([[[0, 0, 3], 2 * FA], [[2, 0, 1], -3 * FA], [[0, 2, 1], -3 * FA]]) },
+  { m: 'xz2',       label: 'xz²',       C: cubicTensor([[[1, 0, 2], 4 * FB], [[3, 0, 0], -FB], [[1, 2, 0], -FB]]) },
+  { m: 'yz2',       label: 'yz²',       C: cubicTensor([[[0, 1, 2], 4 * FB], [[2, 1, 0], -FB], [[0, 3, 0], -FB]]) },
+  { m: 'xyz',       label: 'xyz',       C: cubicTensor([[[1, 1, 1], FC]]) },
+  { m: 'z(x2-y2)',  label: 'z(x²−y²)',  C: cubicTensor([[[2, 0, 1], FD], [[0, 2, 1], -FD]]) },
+  { m: 'x(x2-3y2)', label: 'x(x²−3y²)', C: cubicTensor([[[3, 0, 0], FE], [[1, 2, 0], -3 * FE]]) },
+  { m: 'y(3x2-y2)', label: 'y(3x²−y²)', C: cubicTensor([[[2, 1, 0], 3 * FE], [[0, 3, 0], -FE]]) },
+];
+
 // Render colours. Hue encodes the angular shape; `chroma` (0..1) scales an
 // orbital's contribution to the hue vector, so outer p shells read as paler
 // versions of the same axis colour.
 //  s: warm hues by shell (concentric shells stay distinguishable)
 //  p: one hue per axis in every shell, paler with n
 //  d: five hues of their own
-const S_HUE = { 1: 0, 2: 45, 3: 340, 4: 20 };
+const S_HUE = { 1: 0, 2: 45, 3: 340, 4: 20, 5: 45, 6: 340 };
 const P_HUE = { x: 195, y: 275, z: 125 };
-const P_CHROMA = { 2: 1, 3: 0.6, 4: 0.35 };
+const P_CHROMA = { 2: 1, 3: 0.6, 4: 0.35, 5: 0.35, 6: 0.35 };   // provisional until Phase H
 const D_HUE = { xy: 300, yz: 235, xz: 160, 'x2-y2': 85, z2: 55 };
+const F_HUE = { z3: 15, xz2: 65, yz2: 105, xyz: 145, 'z(x2-y2)': 215, 'x(x2-3y2)': 255, 'y(3x2-y2)': 320 };
 
 function makeOrbitals(subshellId) {
   const s = SUBSHELL[subshellId];
@@ -61,16 +98,42 @@ function makeOrbitals(subshellId) {
       label: `${s.id}<sub>${p.label}</sub>`, hue: P_HUE[p.m], chroma: P_CHROMA[s.n],
     }));
   }
-  return D_SHAPES.map(d => ({
-    ...base, id: s.id + d.m, m: d.m, Q: d.Q,
-    label: `${s.id}<sub>${d.label}</sub>`, hue: D_HUE[d.m], chroma: 1,
+  if (s.l === 2) {
+    return D_SHAPES.map(d => ({
+      ...base, id: s.id + d.m, m: d.m, Q: d.Q,
+      label: `${s.id}<sub>${d.label}</sub>`, hue: D_HUE[d.m], chroma: 1,
+    }));
+  }
+  return F_SHAPES.map(f => ({
+    ...base, id: s.id + f.m, m: f.m, C: f.C,
+    label: `${s.id}<sub>${f.label}</sub>`, hue: F_HUE[f.m], chroma: 1,
   }));
 }
 
-// Shader order. The first five match the original H-Ne layout so frames for
-// those elements consume random numbers in the same order.
-export const ORBITALS = ['1s', '2s', '2p', '3s', '3p', '4s', '3d', '4p'].flatMap(makeOrbitals);
-export const NUM_ORBITALS = ORBITALS.length;   // 18
+// The 12 angular coefficients the shader needs for an orbital:
+//  p: e (3); d: unique Q entries q00 q01 q02 q11 q12 q22 (6);
+//  f: unique C entries c000 c001 c002 c011 c012 c022 c111 c112 c122 c222 (10).
+export function angularCoefs(o) {
+  const out = new Array(12).fill(0);
+  if (o.l === 1) o.e.forEach((v, i) => { out[i] = v; });
+  if (o.l === 2) {
+    const Q = o.Q;
+    [Q[0][0], Q[0][1], Q[0][2], Q[1][1], Q[1][2], Q[2][2]].forEach((v, i) => { out[i] = v; });
+  }
+  if (o.l === 3) {
+    const C = o.C;
+    [C[0][0][0], C[0][0][1], C[0][0][2], C[0][1][1], C[0][1][2], C[0][2][2],
+      C[1][1][1], C[1][1][2], C[1][2][2], C[2][2][2]].forEach((v, i) => { out[i] = v; });
+  }
+  return out;
+}
+
+// Canonical (shader) order. Periods 1-4 keep their original order and new
+// subshells are appended, so frames for H-Kr consume random numbers in the
+// same order as before.
+export const ORBITALS = ['1s', '2s', '2p', '3s', '3p', '4s', '3d', '4p',
+  '5s', '4d', '5p', '6s', '4f', '5d', '6p'].flatMap(makeOrbitals);
+export const NUM_ORBITALS = ORBITALS.length;   // 43
 
 export function orbitalIndex(id) {
   return ORBITALS.findIndex(o => o.id === id);

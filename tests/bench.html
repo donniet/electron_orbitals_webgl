@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>bench…</title>
+  <style>
+    body { font: 14px ui-monospace, monospace; background: #111; color: #ddd; padding: 20px; }
+  </style>
+</head>
+<body>
+  <h1>Electron orbitals – frame-time probe</h1>
+  <p>Renders frames off-screen per element and reports milliseconds per frame
+     (synchronised with readPixels). Options: <code>?z=1,18,36&amp;size=800&amp;frames=20</code>.
+     Absolute numbers depend on the GPU; compare elements on the same machine.</p>
+  <pre id="out">running…</pre>
+  <script type="module" src="bench.js"></script>
+</body>
+</html>

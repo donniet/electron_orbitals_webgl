@@ -4,7 +4,7 @@
 // "PASS n/n" or "FAIL k/n" so headless runs can read it.
 
 import { ELEMENTS, ORBITALS, aufbau, hundFill } from '../js/elements.js';
-import { SUBSHELLS, orbitalIndex, orbitalsOf, isValence } from '../js/orbitals.js';
+import { SUBSHELLS, orbitalIndex, orbitalsOf, isValence, angularCoefs } from '../js/orbitals.js';
 import {
   qAxisAngle, qMul, qToMat3, mat3MulVec, viewToAtom, mat3ToGL,
   meanR2, horizon, momentLookup, radialDensity, columnDensity, makeRng, poisson, pcg, hsvToRgb,
@@ -234,7 +234,23 @@ test('column density integrates to 1 electron over the image plane', () => {
   });
 });
 
-test('full p and d subshells are isotropic (Unsold)', () => {
+test('f shapes: 7 orbitals, packed coefficients rebuild the cubic tensor', () => {
+  const fs = ORBITALS.filter(o => o.l === 3);
+  assert(fs.length === 7, `${fs.length} f orbitals`);
+  for (const o of fs) {
+    const c = angularCoefs(o);
+    // unique entries in the shader's packing order
+    const at = (i, j, k) => {
+      const key = [i, j, k].sort().join('');
+      return c[['000', '001', '002', '011', '012', '022', '111', '112', '122', '222'].indexOf(key)];
+    };
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) for (let k = 0; k < 3; k++) {
+      near(at(i, j, k), o.C[i][j][k], 1e-12, `${o.id} C[${i}${j}${k}]`);
+    }
+  }
+});
+
+test('full p, d and f subshells are isotropic (Unsold)', () => {
   for (const sh of SUBSHELLS.filter(s => s.l > 0)) {
     const vals = [];
     for (const ang of [0, 0.4, 1.1, 2.0]) {

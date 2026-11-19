@@ -85,7 +85,7 @@ export function horizon(element, orbitals) {
 }
 
 // ------------------------------------------------------------ tables
-// Linear interpolation of moment I_k (k = 0, 2, 4) of table row `row` at
+// Linear interpolation of moment I_k (k = 0, 2, 4, 6) of table row `row` at
 // scaled impact parameter u. Mirrors momentAt() in the fragment shader.
 export function momentLookup(tables, row, k, u) {
   const { N, uMax, data } = tables;
@@ -112,9 +112,24 @@ export function columnRef(tables, orbital, P, d) {
     const ep = dot3(orbital.e, P), ed = dot3(orbital.e, d);
     return ep * ep * I(0) + ed * ed * I(2);
   }
-  const QP = mulQ(orbital.Q, P), Qd = mulQ(orbital.Q, d);
-  const a = dot3(P, QP), beta = dot3(P, Qd), c = dot3(d, Qd);
-  return a * a * I(0) + (4 * beta * beta + 2 * a * c) * I(2) + c * c * I(4);
+  if (orbital.l === 2) {
+    const QP = mulQ(orbital.Q, P), Qd = mulQ(orbital.Q, d);
+    const a = dot3(P, QP), beta = dot3(P, Qd), c = dot3(d, Qd);
+    return a * a * I(0) + (4 * beta * beta + 2 * a * c) * I(2) + c * c * I(4);
+  }
+  // f: C(P + t d)^3 = a0 + a1 t + a2 t^2 + a3 t^3
+  const a0 = cform(orbital.C, P, P, P), a1 = 3 * cform(orbital.C, P, P, d);
+  const a2 = 3 * cform(orbital.C, P, d, d), a3 = cform(orbital.C, d, d, d);
+  return a0 * a0 * I(0) + (a1 * a1 + 2 * a0 * a2) * I(2) +
+         (a2 * a2 + 2 * a1 * a3) * I(4) + a3 * a3 * I(6);
+}
+
+function cform(C, a, b, c) {
+  let s = 0;
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) for (let k = 0; k < 3; k++) {
+    s += C[i][j][k] * a[i] * b[j] * c[k];
+  }
+  return s;
 }
 
 // Column density (per electron in the orbital, 1 / Bohr^2) along the ray

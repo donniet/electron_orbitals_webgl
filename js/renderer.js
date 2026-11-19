@@ -2,7 +2,7 @@
 
 import { createContext, createProgram, createTableTexture, createEmptyVAO } from './gl.js';
 import { VERT, FRAG } from './shaders.js';
-import { ORBITALS, NUM_ORBITALS } from './orbitals.js';
+import { ORBITALS, NUM_ORBITALS, angularCoefs } from './orbitals.js';
 import { ELEMENTS } from './elements.js';
 import { horizon, viewToAtom, mat3ToGL, momentLookup, columnRef } from './math.js';
 
@@ -11,10 +11,10 @@ import { horizon, viewToAtom, mat3ToGL, momentLookup, columnRef } from './math.j
 // units (Z0 = n), maximised over all rays. Cached per tables object.
 //  s: max_u I0 / 4pi
 //  p: (e.P)^2 + (e.d)^2 <= |e|^2 when |P| = u, so max = |e|^2 max_u max(u^2 I0, I2)
-//  d: numerical search over directions and image-plane points.
+//  d, f: numerical search over directions and image-plane points.
 const PEAK_CACHE = new WeakMap();
 
-function searchPeakD(tables, orbital) {
+function searchPeak(tables, orbital) {
   let best = 0;
   const nDir = 120, nR = 48, nPhi = 24, uHi = 12;
   for (let k = 0; k < nDir; k++) {
@@ -41,7 +41,7 @@ function searchPeakD(tables, orbital) {
 
 function computePeak(tables, o) {
   const du = tables.uMax / (tables.N - 1);
-  if (o.l === 2) return searchPeakD(tables, o);
+  if (o.l >= 2) return searchPeak(tables, o);
   {
     let best = 0;
     for (let i = 0; i < tables.N; i++) {
@@ -122,17 +122,19 @@ export function createRenderer(canvas, tables) {
   gl.uniform1i(u.uTableN, tables.N);
   gl.uniform1f(u.uTableUMax, tables.uMax);
 
-  // Static per-orbital shape uniforms.
-  gl.uniform2iv(u.uKind, new Int32Array(ORBITALS.flatMap(o => [o.l, o.row])));
-  gl.uniform3fv(u.uAxis, new Float32Array(ORBITALS.flatMap(o => o.e || [0, 0, 0])));
-  gl.uniformMatrix3fv(u.uQ, false, new Float32Array(ORBITALS.flatMap(o => {
-    const Q = o.Q || [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
-    return Array.from(mat3ToGL(Q));
-  })));
-
-  gl.uniform1fv(u.uChroma, new Float32Array(ORBITALS.map(o => o.chroma)));
-
-  const orbBuf = new Float32Array(4 * NUM_ORBITALS);
+  // Per-orbital data lives in a std140 uniform block: 5 vec4 per orbital
+  // (orb, kind, c0, c1, c2). Static shape data is prepared once; each frame
+  // only the occupied, visible orbitals are packed (in canonical order) into
+  // the first uCount slots.
+  const STRIDE = 20;                                   // floats per Orbital
+  const blockIndex = gl.getUniformBlockIndex(prog, 'Orbitals');
+  gl.uniformBlockBinding(prog, blockIndex, 0);
+  const ubo = gl.createBuffer();
+  gl.bindBuffer(gl.UNIFORM_BUFFER, ubo);
+  gl.bufferData(gl.UNIFORM_BUFFER, STRIDE * 4 * NUM_ORBITALS, gl.DYNAMIC_DRAW);
+  gl.bindBufferBase(gl.UNIFORM_BUFFER, 0, ubo);
+  const blockData = new Float32Array(STRIDE * NUM_ORBITALS);
+  const shapeData = ORBITALS.map(o => [o.l, o.row, ...angularCoefs(o)]);   // 14 floats
 
   /**
    * state: {
@@ -156,18 +158,29 @@ export function createRenderer(canvas, tables) {
     const viewArea = 4 * geo.halfExtent[0] * geo.halfExtent[1];
     const gains = orbitalGains(tables, el, state.density, viewArea, state.equalize);
 
+    let count = 0;
     ORBITALS.forEach((o, i) => {
-      orbBuf[4 * i] = state.visible[i] ? el.occupancy[i] : 0;
-      orbBuf[4 * i + 1] = el.zeff[i] / o.n;
-      orbBuf[4 * i + 2] = o.hue / 360;
-      orbBuf[4 * i + 3] = gains[i];
+      if (!(el.occupancy[i] > 0) || !state.visible[i]) return;
+      const b = STRIDE * count++;
+      const [l, row, ...coefs] = shapeData[i];
+      blockData[b] = el.occupancy[i];
+      blockData[b + 1] = el.zeff[i] / o.n;
+      blockData[b + 2] = o.hue / 360;
+      blockData[b + 3] = gains[i];
+      blockData[b + 4] = l;
+      blockData[b + 5] = row;
+      blockData[b + 6] = o.chroma;
+      blockData[b + 7] = 0;
+      blockData.set(coefs, b + 8);
     });
+    gl.bindBuffer(gl.UNIFORM_BUFFER, ubo);
+    gl.bufferSubData(gl.UNIFORM_BUFFER, 0, blockData, 0, Math.max(1, count) * STRIDE);
 
     gl.uniform2f(u.uResolution, w, h);
     gl.uniform2f(u.uHalfExtent, geo.halfExtent[0], geo.halfExtent[1]);
     gl.uniformMatrix3fv(u.uRot, false, mat3ToGL(viewToAtom(state.orientation)));
     gl.uniform1ui(u.uSeed, state.seed >>> 0);
-    gl.uniform4fv(u.uOrb, orbBuf);
+    gl.uniform1i(u.uCount, count);
     gl.uniform1f(u.uKMax, state.kMax);
     gl.uniform1f(u.uGamma, state.gamma);
     gl.uniform1i(u.uMode, state.mode === 'white' ? 1 : 0);
