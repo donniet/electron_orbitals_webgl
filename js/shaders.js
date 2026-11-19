@@ -8,7 +8,8 @@ void main() {
 }
 `;
 
-export const NUM_ORBITALS = 5;
+import { NUM_ORBITALS } from './orbitals.js';
+export { NUM_ORBITALS };
 
 export const FRAG = `#version 300 es
 precision highp float;
@@ -17,10 +18,11 @@ precision highp sampler2D;
 
 #define NUM_ORBITALS ${NUM_ORBITALS}
 
-// Column-density tables, RGBA = (A_2p, B_2p, S_1s, S_2s), scaled units.
+// Moment tables: row r, texel i = (I0, I2, I4, 0) of radial function r at
+// scaled impact parameter u = i * uTableUMax / (uTableN - 1), u = Z b / n.
 uniform sampler2D uTables;
 uniform int   uTableN;
-uniform float uTableBMax;
+uniform float uTableUMax;
 
 uniform vec2  uResolution;   // framebuffer size (px)
 uniform vec2  uHalfExtent;   // half width/height of the view (Bohr)
@@ -30,10 +32,11 @@ uniform float uKMax;         // detections giving full brightness
 uniform float uGamma;        // tone curve: amount = (k / uKMax)^uGamma
 uniform int   uMode;         // 0 = dark background, 1 = white background
 
-uniform float uOcc[NUM_ORBITALS];   // electrons in each orbital (0 = skip)
-uniform float uZeff[NUM_ORBITALS];  // effective nuclear charge
-uniform float uHue[NUM_ORBITALS];   // hue in [0, 1)
-uniform float uGain[NUM_ORBITALS];  // lambda = occ * Z^2 * col * uGain[i]
+// Per orbital (packed to stay well inside the uniform-vector budget):
+uniform vec4  uOrb[NUM_ORBITALS];   // (occupancy (0 = skip), kappa = Z/n, hue in [0,1), gain)
+uniform ivec2 uKind[NUM_ORBITALS];  // (l, table row)
+uniform vec3  uAxis[NUM_ORBITALS];  // p: sqrt(3/4pi) * lobe axis
+uniform mat3  uQ[NUM_ORBITALS];     // d: quadratic form of the real harmonic
 
 out vec4 outColor;
 
@@ -72,13 +75,31 @@ int poisson(float lambda, inout uint s) {
 
 // ---------------------------------------------------------------- tables
 // Manual linear interpolation (float textures need not be filterable).
-vec4 tableAt(float b) {
-  float x = b / uTableBMax * float(uTableN - 1);
+vec4 momentAt(int row, float u) {
+  float x = u / uTableUMax * float(uTableN - 1);
   if (x >= float(uTableN - 1)) return vec4(0.0);
   int i = int(x);
   float f = x - float(i);
-  return mix(texelFetch(uTables, ivec2(i, 0), 0),
-             texelFetch(uTables, ivec2(i + 1, 0), 0), f);
+  return mix(texelFetch(uTables, ivec2(i, row), 0),
+             texelFetch(uTables, ivec2(i + 1, row), 0), f);
+}
+
+// Column density in reference units (Z0 = n) for scaled closest point P.
+//  s: I0 / 4pi
+//  p: (e.P)^2 I0 + (e.d)^2 I2
+//  d: a^2 I0 + (4 beta^2 + 2 a c) I2 + c^2 I4,  a = PQP, beta = PQd, c = dQd
+float columnRef(int i, vec3 P, vec3 d) {
+  ivec2 kind = uKind[i];
+  vec4 m = momentAt(kind.y, length(P));
+  if (kind.x == 0) return m.x * 0.0795774715459;   // 1 / (4 pi)
+  if (kind.x == 1) {
+    float ep = dot(uAxis[i], P), ed = dot(uAxis[i], d);
+    return ep * ep * m.x + ed * ed * m.y;
+  }
+  mat3 Q = uQ[i];
+  vec3 Qd = Q * d;
+  float a = dot(P, Q * P), beta = dot(P, Qd), c = dot(d, Qd);
+  return a * a * m.x + (4.0 * beta * beta + 2.0 * a * c) * m.y + c * c * m.z;
 }
 
 vec3 hsv2rgb(vec3 c) {
@@ -94,7 +115,6 @@ void main() {
   vec2 xy = ndc * uHalfExtent;
   vec3 p = uRot * vec3(xy, 0.0);
   vec3 d = uRot * vec3(0.0, 0.0, 1.0);
-  float b = length(xy);
 
   uint s = pcg(uint(gl_FragCoord.x) + pcg(uint(gl_FragCoord.y) + pcg(uSeed)));
 
@@ -102,25 +122,14 @@ void main() {
   float total = 0.0;
 
   for (int i = 0; i < NUM_ORBITALS; i++) {
-    float occ = uOcc[i];
-    if (occ <= 0.0) continue;
-    float z = uZeff[i];
-    vec4 t = tableAt(b * z);
-    float col;
-    if (i == 0) {
-      col = t.z;                       // 1s
-    } else if (i == 1) {
-      col = t.w;                       // 2s
-    } else {
-      int axis = i - 2;                // 2px, 2py, 2pz
-      float pa = p[axis] * z;
-      float da = d[axis];
-      col = pa * pa * t.x + da * da * t.y;
-    }
-    float lambda = occ * z * z * col * uGain[i];
+    vec4 orb = uOrb[i];
+    if (orb.x <= 0.0) continue;
+    float kappa = orb.y;
+    float col = kappa * kappa * columnRef(i, kappa * p, d);
+    float lambda = orb.x * col * orb.w;
     int k = poisson(lambda, s);
     float sat = k > 0 ? min(1.0, pow(float(k) / uKMax, uGamma)) : 0.0;
-    float h = uHue[i] * 6.28318530718;
+    float h = orb.z * 6.28318530718;
     chroma += sat * vec2(cos(h), sin(h));
     total += sat;
   }

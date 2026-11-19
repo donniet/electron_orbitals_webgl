@@ -1,18 +1,24 @@
 // Radial electron density inset: occ * P(r) per subshell plus the total,
 // in electrons per Bohr radius, always physical (never equalized).
 
-import { ELEMENTS, ORBITALS } from './elements.js';
+import { ELEMENTS } from './elements.js';
 import { radialDensity } from './math.js';
+import { SUBSHELLS, orbitalsOf } from './orbitals.js';
 
 const BOHR_PM = 52.9177;
 
 // Same hues as the render, stepped to chart-safe lightness for the dark
 // panel (validated: lightness band, CVD separation, contrast vs #151922).
-export const SERIES = [
-  { key: '1s', label: '1s', color: '#ca1616', n: 1, l: 0, orbitals: [0] },
-  { key: '2s', label: '2s', color: '#b88b05', n: 2, l: 0, orbitals: [1] },
-  { key: '2p', label: '2p', color: '#0f91bd', n: 2, l: 1, orbitals: [2, 3, 4] },
-];
+// One series per subshell. Colours for shells 3-4 are provisional until the
+// period 3/4 colour pass re-validates the palette.
+const CHART_COLORS = {
+  '1s': '#ca1616', '2s': '#b88b05', '2p': '#0f91bd',
+  '3s': '#c2410c', '3p': '#0e7490', '3d': '#a21caf', '4s': '#be123c', '4p': '#155e75',
+};
+export const SERIES = SUBSHELLS.map(sh => ({
+  key: sh.id, label: sh.id, color: CHART_COLORS[sh.id], n: sh.n, l: sh.l,
+  orbitals: orbitalsOf(sh.id),
+}));
 const INK = { muted: '#8b93a7', faint: '#2a3142', text: '#e6e9f0', total: '#c5cad6' };
 const M = { l: 34, r: 8, t: 10, b: 22 };   // margins, CSS px
 const SAMPLES = 240;

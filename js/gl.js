@@ -37,13 +37,13 @@ export function createProgram(gl, vertSrc, fragSrc) {
   return { prog, uniforms };
 }
 
-// Upload the RGBA float tables as an N x 1 RGBA32F texture. Sampled with
+// Upload the RGBA float tables as an N x rows RGBA32F texture. Sampled with
 // texelFetch + manual lerp, so NEAREST filtering is all that is required.
-export function createTableTexture(gl, data, n) {
+export function createTableTexture(gl, data, n, rows = 1) {
   const tex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, tex);
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, n, 1, 0, gl.RGBA, gl.FLOAT, data);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, n, rows, 0, gl.RGBA, gl.FLOAT, data);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);

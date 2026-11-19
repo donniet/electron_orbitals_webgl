@@ -69,14 +69,8 @@ export function meanR2(n, l, z) {
   return (n * n) / (2 * z * z) * (5 * n * n + 1 - 3 * l * (l + 1));
 }
 
-// Normalised radial probability density P(r) = r^2 R_nl(r)^2 (per a0) for a
-// hydrogen-like orbital with effective charge z. Integrates to 1 over r.
-export function radialDensity(n, l, z, r) {
-  const x = z * r;
-  if (n === 1) return 4 * z * x * x * Math.exp(-2 * x);
-  if (l === 0) return (z / 8) * x * x * (2 - x) * (2 - x) * Math.exp(-x);
-  return (z / 24) * x * x * x * x * Math.exp(-x);
-}
+// Radial densities live in orbitals.js; re-exported for convenience.
+export { radialDensity } from './orbitals.js';
 
 // "Horizon": 2 standard deviations of the electron position
 // (sigma = sqrt(<r^2>)) for the most diffuse occupied orbital.
@@ -91,28 +85,43 @@ export function horizon(element, orbitals) {
 }
 
 // ------------------------------------------------------------ tables
-// Linear interpolation of channel `ch` at scaled impact parameter b.
-// Mirrors tableAt() in the fragment shader.
-export function tableLookup(tables, ch, b) {
-  const { N, bMax, data } = tables;
-  const x = (b / bMax) * (N - 1);
+// Linear interpolation of moment I_k (k = 0, 2, 4) of table row `row` at
+// scaled impact parameter u. Mirrors momentAt() in the fragment shader.
+export function momentLookup(tables, row, k, u) {
+  const { N, uMax, data } = tables;
+  const x = (u / uMax) * (N - 1);
   if (x >= N - 1) return 0;
   const i = Math.floor(x);
   const f = x - i;
-  return data[4 * i + ch] * (1 - f) + data[4 * (i + 1) + ch] * f;
+  const base = (row * N + i) * 4 + k / 2;
+  return data[base] * (1 - f) + data[base + 4] * f;
 }
 
-// Column density (electrons / Bohr^2 per electron in the orbital) along the
-// ray with closest point p (atom frame, p.d = 0) and unit direction d.
+function dot3(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+function mulQ(Q, v) {
+  return [dot3(Q[0], v), dot3(Q[1], v), dot3(Q[2], v)];
+}
+
+// Column density in reference units (Z0 = n) for scaled closest point P
+// and unit direction d. Mirrors the shader.
+export function columnRef(tables, orbital, P, d) {
+  const u = Math.hypot(P[0], P[1], P[2]);
+  const I = k => momentLookup(tables, orbital.row, k, u);
+  if (orbital.l === 0) return I(0) / (4 * Math.PI);
+  if (orbital.l === 1) {
+    const ep = dot3(orbital.e, P), ed = dot3(orbital.e, d);
+    return ep * ep * I(0) + ed * ed * I(2);
+  }
+  const QP = mulQ(orbital.Q, P), Qd = mulQ(orbital.Q, d);
+  const a = dot3(P, QP), beta = dot3(P, Qd), c = dot3(d, Qd);
+  return a * a * I(0) + (4 * beta * beta + 2 * a * c) * I(2) + c * c * I(4);
+}
+
+// Column density (per electron in the orbital, 1 / Bohr^2) along the ray
+// with closest point p (atom frame, p.d = 0) and unit direction d.
 export function columnDensity(tables, orbital, zeff, p, d) {
-  const ps = [p[0] * zeff, p[1] * zeff, p[2] * zeff];
-  const b = Math.hypot(ps[0], ps[1], ps[2]);
-  const z2 = zeff * zeff;
-  if (orbital.kind === 's1') return z2 * tableLookup(tables, 2, b);
-  if (orbital.kind === 's2') return z2 * tableLookup(tables, 3, b);
-  const a = orbital.axis;
-  return z2 * (ps[a] * ps[a] * tableLookup(tables, 0, b) +
-               d[a] * d[a] * tableLookup(tables, 1, b));
+  const k = zeff / orbital.n;
+  return k * k * columnRef(tables, orbital, [k * p[0], k * p[1], k * p[2]], d);
 }
 
 // ------------------------------------------------------------ random

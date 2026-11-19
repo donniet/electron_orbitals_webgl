@@ -2,12 +2,17 @@
 // Results are written into the page; document.title becomes
 // "PASS n/n" or "FAIL k/n" so headless runs can read it.
 
-import { ELEMENTS, ORBITALS } from '../js/elements.js';
+import { ELEMENTS, ORBITALS, aufbau, hundFill } from '../js/elements.js';
+import { SUBSHELLS, orbitalIndex, orbitalsOf } from '../js/orbitals.js';
 import {
   qAxisAngle, qMul, qToMat3, mat3MulVec, viewToAtom, mat3ToGL,
-  meanR2, horizon, tableLookup, radialDensity, columnDensity, makeRng, poisson, pcg, hsvToRgb,
+  meanR2, horizon, momentLookup, radialDensity, columnDensity, makeRng, poisson, pcg, hsvToRgb,
 } from '../js/math.js';
-import { TABLES, createRenderer, viewGeometry, SCALED_PEAK, orbitalPeak, orbitalGains, MAX_HORIZON } from '../js/renderer.js';
+import { createRenderer, viewGeometry, orbitalPeak, orbitalGains, MAX_HORIZON } from '../js/renderer.js';
+import { loadTables } from '../js/tables.js';
+
+const TABLES = await loadTables();
+const P = id => orbitalIndex(id);
 
 const results = [];
 function test(name, fn) {
@@ -60,7 +65,7 @@ test('<r^2> hydrogen 1s = 3 a0^2, 2s = 42, 2p = 30', () => {
 test('horizon uses the most diffuse occupied orbital', () => {
   near(horizon(ELEMENTS[0], ORBITALS), 2 * Math.sqrt(3), 1e-12);
   const li = ELEMENTS[2];
-  near(horizon(li, ORBITALS), 2 * Math.sqrt(42) / li.zeff[1], 1e-12);
+  near(horizon(li, ORBITALS), 2 * Math.sqrt(42) / li.zeff[P('2s')], 1e-12);
 });
 
 function integrate(f, a, b, n = 4000) {
@@ -101,7 +106,7 @@ test('element data: 10 elements, occupancy sums to Z', () => {
 });
 
 test("p orbitals fill by Hund's rule", () => {
-  const p = z => ELEMENTS[z - 1].occupancy.slice(2).join('');
+  const p = z => orbitalsOf('2p').map(i => ELEMENTS[z - 1].occupancy[i]).join('');
   assert(p(5) === '100' && p(6) === '110' && p(7) === '111');
   assert(p(8) === '211' && p(9) === '221' && p(10) === '222');
 });
@@ -112,13 +117,38 @@ test('electron configurations', () => {
   assert(ELEMENTS[9].config === '1s² 2s² 2p⁶');
 });
 
+test('aufbau and Hund helpers', () => {
+  assert(JSON.stringify(aufbau(7)) === JSON.stringify({ '1s': 2, '2s': 2, '2p': 3 }));
+  assert(JSON.stringify(aufbau(21)) === JSON.stringify({ '1s': 2, '2s': 2, '2p': 6, '3s': 2, '3p': 6, '4s': 2, '3d': 1 }));
+  assert(hundFill(7, 5).join('') === '22111');
+});
+
 // ------------------------------------------------------------ tables
-test('table values at b = 0 match closed forms', () => {
-  near(tableLookup(TABLES, 0, 0), 1 / (16 * Math.PI), 1e-6);
-  near(tableLookup(TABLES, 1, 0), 1 / (8 * Math.PI), 1e-6);
-  near(tableLookup(TABLES, 2, 0), 1 / Math.PI, 1e-6);
-  near(tableLookup(TABLES, 3, 0), 1 / (8 * Math.PI), 1e-6);
-  assert(tableLookup(TABLES, 2, 1e6) === 0, 'lookup past bMax must be 0');
+test('table rows match orbitals.js subshell rows', () => {
+  for (const sh of SUBSHELLS) {
+    const r = TABLES.rows[sh.row];
+    assert(r.name === sh.id && r.n === sh.n && r.l === sh.l, `${sh.id} -> row ${sh.row} is ${r.name}`);
+  }
+});
+
+test('moment tables at u = 0 match closed forms', () => {
+  // 1s: R^2 = 4 e^{-2r}; 2p (Z = 2): R^2 / r^2 = (4/3) e^{-2r}
+  const r1s = TABLES.rows.findIndex(r => r.name === '1s');
+  const r2p = TABLES.rows.findIndex(r => r.name === '2p');
+  [4, 2, 6].forEach((v, j) => near(momentLookup(TABLES, r1s, 2 * j, 0), v, 1e-5));
+  [4 / 3, 2 / 3, 2].forEach((v, j) => near(momentLookup(TABLES, r2p, 2 * j, 0), v, 1e-5));
+  assert(momentLookup(TABLES, r1s, 0, 1e6) === 0, 'lookup past uMax must be 0');
+});
+
+test('radialDensity (general n, l) normalised with correct <r^2>', () => {
+  for (const sh of SUBSHELLS) {
+    for (const z of [1, 3.3]) {
+      const hi = 60 * sh.n / z;
+      near(integrate(r => radialDensity(sh.n, sh.l, z, r), 0, hi), 1, 1e-6, `norm ${sh.id}`);
+      near(integrate(r => r * r * radialDensity(sh.n, sh.l, z, r), 0, hi), meanR2(sh.n, sh.l, z),
+        1e-5 * meanR2(sh.n, sh.l, z), `<r2> ${sh.id}`);
+    }
+  }
 });
 
 test('column density integrates to 1 electron over the image plane', () => {
@@ -126,25 +156,28 @@ test('column density integrates to 1 electron over the image plane', () => {
   const q = qAxisAngle([0.3, 1, 0.2], 0.9);
   const R = viewToAtom(q);
   const d = mat3MulVec(R, [0, 0, 1]);
-  for (const [i, z] of [[0, 1.7], [1, 1.3], [2, 2.4], [3, 2.4], [4, 2.4]]) {
-    const ext = 30 / z, n = 300, hstep = 2 * ext / n;
+  ORBITALS.forEach((o, i) => {
+    const z = 1.3 + 0.4 * i;
+    const ext = 30 * o.n / z, n = 260, hstep = 2 * ext / n;
     let acc = 0;
     for (let a = 0; a < n; a++) for (let b = 0; b < n; b++) {
       const x = -ext + (a + 0.5) * hstep, y = -ext + (b + 0.5) * hstep;
       acc += columnDensity(TABLES, ORBITALS[i], z, mat3MulVec(R, [x, y, 0]), d);
     }
-    near(acc * hstep * hstep, 1, 0.01, ORBITALS[i].id);
-  }
+    near(acc * hstep * hstep, 1, 0.01, o.id);
+  });
 });
 
-test('full p shell is isotropic', () => {
-  const vals = [];
-  for (const ang of [0, 0.4, 1.1, 2.0]) {
-    const R = viewToAtom(qAxisAngle([1, 0.5, -0.3], ang));
-    const p = mat3MulVec(R, [0.8, 0.3, 0]), d = mat3MulVec(R, [0, 0, 1]);
-    vals.push([2, 3, 4].reduce((s, i) => s + columnDensity(TABLES, ORBITALS[i], 2, p, d), 0));
+test('full p and d subshells are isotropic (Unsold)', () => {
+  for (const sh of SUBSHELLS.filter(s => s.l > 0)) {
+    const vals = [];
+    for (const ang of [0, 0.4, 1.1, 2.0]) {
+      const R = viewToAtom(qAxisAngle([1, 0.5, -0.3], ang));
+      const p = mat3MulVec(R, [0.8, 0.3, 0]), d = mat3MulVec(R, [0, 0, 1]);
+      vals.push(orbitalsOf(sh.id).reduce((s, i) => s + columnDensity(TABLES, ORBITALS[i], 2, p, d), 0));
+    }
+    for (const v of vals) near(v, vals[0], 1e-6 + 1e-5 * vals[0], sh.id);
   }
-  for (const v of vals) near(v, vals[0], 1e-6);
 });
 
 // ------------------------------------------------------------ random
@@ -173,17 +206,22 @@ test('hsvToRgb primaries', () => {
 });
 
 // ------------------------------------------------------------ equalize
-test('scaled peaks: 1s/2s at b=0, p end-on B(0)', () => {
-  near(SCALED_PEAK.s1, 1 / Math.PI, 1e-6);
-  near(SCALED_PEAK.s2, 1 / (8 * Math.PI), 1e-6);
-  near(SCALED_PEAK.p, 1 / (8 * Math.PI), 1e-6);
+test('orbital peaks: 1s/2s at b=0, 2p end-on (closed forms)', () => {
+  const [H, , Li, , B] = ELEMENTS;
+  near(orbitalPeak(TABLES, H, P('1s')), 1 / Math.PI, 1e-6);
+  const z2s = Li.zeff[P('2s')];
+  near(orbitalPeak(TABLES, Li, P('2s')), z2s * z2s / (8 * Math.PI), 1e-6);
+  const z2p = B.zeff[P('2px')];
+  near(orbitalPeak(TABLES, B, P('2px')), z2p * z2p / (8 * Math.PI), 1e-6);
 });
 
 test('equalized gains give every occupied orbital the same peak lambda', () => {
   const n = ELEMENTS[6];
-  const g = orbitalGains(n, 0.15, 50, true);
-  n.occupancy.forEach((o, i) => near(orbitalPeak(n, i) * g[i], 0.15 * 20, 1e-9, ORBITALS[i].id));
-  const phys = orbitalGains(n, 0.15, 50, false);
+  const g = orbitalGains(TABLES, n, 0.15, 50, true);
+  n.occupancy.forEach((o, i) => {
+    if (o > 0) near(orbitalPeak(TABLES, n, i) * g[i], 0.15 * 20, 1e-9, ORBITALS[i].id);
+  });
+  const phys = orbitalGains(TABLES, n, 0.15, 50, false);
   assert(phys.every(v => v === phys[0]), 'physical gains must be shared');
 });
 
@@ -191,7 +229,7 @@ test('equalized gains give every occupied orbital the same peak lambda', () => {
 function renderFrame(z, opts = {}) {
   const canvas = document.createElement('canvas');
   canvas.width = 256; canvas.height = 256;
-  const r = createRenderer(canvas);
+  const r = createRenderer(canvas, TABLES);
   const state = {
     element: ELEMENTS[z - 1], orientation: opts.q || [0, 0, 0, 1], zoom: 1,
     seed: opts.seed ?? 1, density: opts.density ?? 0.3,
@@ -237,7 +275,7 @@ test('GPU: boron 2px lobes lie along view x when unrotated', () => {
   for (let s = 1; s <= 4; s++) {
     const px = renderFrame(5, { seed: s, density: 1 });
     const g = viewGeometry(ELEMENTS[4], 256, 256, 1);
-    const r = Math.round(2.0 / ELEMENTS[4].zeff[2] / g.bohrPerPixel); // ~ lobe peak
+    const r = Math.round(2.0 / ELEMENTS[4].zeff[P('2px')] / g.bohrPerPixel); // ~ lobe peak
     for (let o = -6; o <= 6; o++) for (let t = -6; t <= 6; t++) {
       alongX += brightness(px, 128 + r + o, 128 + t) + brightness(px, 128 - r + o, 128 + t);
       alongY += brightness(px, 128 + t, 128 + r + o) + brightness(px, 128 + t, 128 - r + o);

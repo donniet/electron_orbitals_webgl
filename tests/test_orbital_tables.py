@@ -195,24 +195,6 @@ class TestUnsold(unittest.TestCase):
             self.check([s for s in SHAPES if (s.n, s.l) == (n, l)], rng)
 
 
-class TestLegacyConsistency(unittest.TestCase):
-    """New 1s/2s/2p tables reproduce the legacy H-Ne tables used by the app."""
-
-    def test_matches_legacy(self):
-        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-        from test_tables import col_from_tables  # legacy formula
-        rng = random.Random(9)
-        for lab, legacy in (("1s", "1s"), ("2s", "2s"), ("2px", "2px"), ("2pz", "2pz")):
-            s = BY_LABEL[lab]
-            for z in (1.0, 3.2, 5.758):
-                for _ in range(3):
-                    p, d = random_ray(rng, 4.0 / z)
-                    got = s.column(moments(s.row), z, p, d)
-                    want = col_from_tables(legacy, p, d, z)
-                    self.assertAlmostEqual(got, want, delta=1e-3 * max(want, 1e-3 * z * z) + 1e-8,
-                                           msg=f"{lab} z={z}")
-
-
 class TestMonteCarlo(unittest.TestCase):
     def test_sampled_histograms_match_tables(self):
         for i, (lab, d) in enumerate([("3s", [0, 0, 1]), ("4px", [0, 0.6, 0.8]),

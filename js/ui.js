@@ -2,6 +2,7 @@
 // 2D overlay drawn over the WebGL canvas (horizon ring, axes, scale bar).
 
 import { ELEMENTS, ORBITALS } from './elements.js';
+import { SUBSHELL } from './orbitals.js';
 import { qToMat3, meanR2, hslCss } from './math.js';
 
 const BOHR_PM = 52.9177;
@@ -114,7 +115,11 @@ export function updateElement(app) {
       infoRow('1st ionization', `${el.ionizationEnergy.toFixed(3)} eV`)),
   );
 
-  const rows = ORBITALS.map((o, i) => {
+  // Show the subshells of every period up to this element's (at least 2).
+  const maxPeriod = Math.max(2, el.period);
+  const rows = ORBITALS.map((o, i) => [o, i])
+    .filter(([o]) => SUBSHELL[o.subshell].period <= maxPeriod)
+    .map(([o, i]) => {
     const occ = el.occupancy[i];
     const z = el.zeff[i];
     const pips = occ === 0 ? '—' : (occ === 2 ? '↑↓' : '↑');
@@ -176,7 +181,7 @@ export function drawOverlay(canvas, state, geo) {
     .map(a => ({ a, v: [m[0][a], m[1][a], m[2][a]] }))
     .sort((p, q) => p.v[2] - q.v[2]);      // draw back-to-front
   for (const { a, v } of axes) {
-    const o = ORBITALS[2 + a];
+    const o = ORBITALS.find(orb => orb.subshell === '2p' && orb.axis === a);
     ctx.strokeStyle = ctx.fillStyle = hslCss(o.hue, 90, state.mode === 'white' ? 40 : 60);
     ctx.lineWidth = 2 * dpr;
     ctx.beginPath();

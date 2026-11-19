@@ -1,31 +1,51 @@
-// Element data for H..Ne and the orbitals we render.
+// Element data and electron configurations.
 //
 // Effective nuclear charges are the Clementi & Raimondi (1963) SCF values.
 // Orbitals are hydrogen-like with these Z_eff, in a fixed orientation in the
-// atom frame. p orbitals fill by Hund's rule: px, py, pz singly, then paired.
+// atom frame. Within a p or d subshell orbitals fill by Hund's rule in a
+// fixed order (p: x, y, z; d: xy, yz, xz, x²−y², z²): singly, then paired.
 
-// Orbital render order (index into shader uniform arrays).
-// kind: 's1' | 's2' | 'p' ; axis is the lobe axis for p orbitals.
-// label is HTML; hue is in degrees.
-export const ORBITALS = [
-  { id: '1s',  label: '1s',  n: 1, l: 0, kind: 's1', axis: -1, hue: 0,   zeffKey: '1s' },
-  { id: '2s',  label: '2s',  n: 2, l: 0, kind: 's2', axis: -1, hue: 45,  zeffKey: '2s' },
-  { id: '2px', label: '2p<sub>x</sub>', n: 2, l: 1, kind: 'p',  axis: 0,  hue: 195, zeffKey: '2p' },
-  { id: '2py', label: '2p<sub>y</sub>', n: 2, l: 1, kind: 'p',  axis: 1,  hue: 275, zeffKey: '2p' },
-  { id: '2pz', label: '2p<sub>z</sub>', n: 2, l: 1, kind: 'p',  axis: 2,  hue: 125, zeffKey: '2p' },
-];
+import { ORBITALS, SUBSHELLS, AUFBAU, orbitalsOf } from './orbitals.js';
 
-const SUP = { 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶' };
+export { ORBITALS } from './orbitals.js';
 
-const P_FILL = [ // Hund's rule occupancy of (px, py, pz) for 0..6 electrons
-  [0, 0, 0], [1, 0, 0], [1, 1, 0], [1, 1, 1], [2, 1, 1], [2, 2, 1], [2, 2, 2],
-];
+const CAPACITY = { 0: 2, 1: 6, 2: 10 };
+const SUP = '⁰¹²³⁴⁵⁶⁷⁸⁹';
+const sup = n => String(n).split('').map(c => SUP[+c]).join('');
 
-function occupancy(z) {
-  const s1 = Math.min(z, 2);
-  const s2 = Math.min(Math.max(z - 2, 0), 2);
-  const p = Math.max(z - 4, 0);
-  return [s1, s2, ...P_FILL[p]];
+// Ground-state subshell occupancy by the Aufbau order, with explicit
+// exceptions (e.g. Cr, Cu) supplied per element.
+export function aufbau(z) {
+  const out = {};
+  let left = z;
+  for (const id of AUFBAU) {
+    if (left <= 0) break;
+    const cap = CAPACITY[SUBSHELLS.find(s => s.id === id).l];
+    out[id] = Math.min(cap, left);
+    left -= out[id];
+  }
+  return out;
+}
+
+// Distribute `count` electrons over the orbitals of a subshell (Hund).
+export function hundFill(count, nOrbitals) {
+  const occ = new Array(nOrbitals).fill(0);
+  for (let e = 0; e < count; e++) occ[e % nOrbitals]++;
+  return occ;
+}
+
+export function orbitalOccupancy(subshellOcc) {
+  const occ = new Array(ORBITALS.length).fill(0);
+  for (const [id, count] of Object.entries(subshellOcc)) {
+    const idx = orbitalsOf(id);
+    hundFill(count, idx.length).forEach((c, j) => { occ[idx[j]] = c; });
+  }
+  return occ;
+}
+
+export function electronConfig(subshellOcc) {
+  return SUBSHELLS.filter(s => subshellOcc[s.id])
+    .map(s => s.id + sup(subshellOcc[s.id])).join(' ');
 }
 
 const RAW = [
@@ -42,27 +62,24 @@ const RAW = [
   [10, 'Ne', 'Neon',      20.180,  18, 'Noble gas',             null, 21.565, { '1s': 9.642, '2s': 5.758, '2p': 5.758 }],
 ];
 
-export const ELEMENTS = RAW.map(([z, symbol, name, mass, group, category, en, ie, zeff]) => {
-  const occ = occupancy(z);
+function periodOf(z) {
+  return z <= 2 ? 1 : z <= 10 ? 2 : z <= 18 ? 3 : 4;
+}
+
+export const ELEMENTS = RAW.map(([z, symbol, name, mass, group, category, en, ie, zeff, configOverride]) => {
+  const subshells = configOverride || aufbau(z);
   return {
     z, symbol, name, mass, group, category,
-    period: z <= 2 ? 1 : 2,
+    period: periodOf(z),
     electronegativity: en,
     ionizationEnergy: ie,
-    occupancy: occ,                                   // per ORBITALS index
-    zeff: ORBITALS.map(o => zeff[o.zeffKey] ?? 0),    // per ORBITALS index
-    config: electronConfig(occ),
+    subshells,                                         // { '1s': 2, ... }
+    occupancy: orbitalOccupancy(subshells),            // per ORBITALS index
+    zeff: ORBITALS.map(o => zeff[o.subshell] ?? 0),    // per ORBITALS index
+    zeffBySubshell: zeff,
+    config: electronConfig(subshells),
   };
 });
-
-function electronConfig(occ) {
-  const parts = [];
-  if (occ[0]) parts.push('1s' + SUP[occ[0]]);
-  if (occ[1]) parts.push('2s' + SUP[occ[1]]);
-  const p = occ[2] + occ[3] + occ[4];
-  if (p) parts.push('2p' + SUP[p]);
-  return parts.join(' ');
-}
 
 export function elementByZ(z) {
   return ELEMENTS[z - 1];

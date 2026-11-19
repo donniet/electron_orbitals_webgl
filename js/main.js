@@ -12,6 +12,7 @@
 import { elementByZ, ORBITALS } from './elements.js';
 import { qAxisAngle, qMul } from './math.js';
 import { createRenderer } from './renderer.js';
+import { loadTables } from './tables.js';
 import { attachControls } from './controls.js';
 import { buildUI, syncControls, updateElement, updateStatus, drawOverlay } from './ui.js';
 import { createRadialPlot } from './radial.js';
@@ -48,9 +49,10 @@ function clampInt(v, lo, hi, dflt) {
 
 const glCanvas = document.getElementById('gl');
 const overlay = document.getElementById('overlay');
-let renderer;
+let renderer, tables;
 try {
-  renderer = createRenderer(glCanvas);
+  tables = await loadTables();
+  renderer = createRenderer(glCanvas, tables);
 } catch (err) {
   document.getElementById('error').textContent = err.message;
   document.getElementById('error').hidden = false;
