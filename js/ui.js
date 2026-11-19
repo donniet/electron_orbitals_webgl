@@ -195,7 +195,7 @@ function infoRow(k, v, title) {
 
 export function updateStatus(state, geo, fps) {
   $('#status').textContent =
-    `frame ${state.frame}  ·  seed ${state.seed >>> 0}  ·  horizon 2σ = ${geo.horizon.toFixed(2)} a₀ ` +
+    `horizon 2σ = ${geo.horizon.toFixed(2)} a₀ ` +
     `(${(geo.horizon * BOHR_PM).toFixed(0)} pm)` + (fps ? `  ·  ${fps.toFixed(0)} fps` : '');
 }
 
