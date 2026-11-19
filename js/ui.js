@@ -114,7 +114,11 @@ export function updateElement(app) {
   $('#element-card').replaceChildren(
     tile,
     h('div', { class: 'card-info' },
-      h('div', { class: 'card-name' }, el.name),
+      h('div', { class: 'card-name-row' },
+        h('div', { class: 'card-name' }, el.name),
+        h('span', { class: 'stepper' },
+          stepButton('‹', 'Previous element (←)', el.z - 1, app),
+          stepButton('›', 'Next element (→)', el.z + 1, app))),
       h('div', { class: 'card-cat' }, el.category),
       infoRow('Configuration', el.configShort, el.config),
       infoRow('Period / Group', `${el.period} / ${el.group}`),
@@ -187,6 +191,13 @@ export function updateElement(app) {
   }
 }
 
+function stepButton(label, title, z, app) {
+  const b = h('button', { class: 'step', title, 'aria-label': title }, label);
+  if (z < 1 || z > ELEMENTS.length) b.disabled = true;
+  else b.addEventListener('click', () => app.setElement(z));
+  return b;
+}
+
 function infoRow(k, v, title) {
   const val = h('span', { class: 'v' }, v);
   if (title) val.title = title;
@@ -200,6 +211,18 @@ export function updateStatus(state, geo, fps) {
 }
 
 // ------------------------------------------------------------ overlay
+// Fill text with a halo in the background colour so labels stay legible
+// over the horizon ring and the speckle.
+function haloText(ctx, text, x, y, halo, width) {
+  ctx.save();
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = halo;
+  ctx.lineWidth = width;
+  ctx.strokeText(text, x, y);
+  ctx.restore();
+  ctx.fillText(text, x, y);
+}
+
 export function drawOverlay(canvas, state, geo) {
   const ctx = canvas.getContext('2d');
   const w = canvas.width, hgt = canvas.height;
@@ -209,6 +232,12 @@ export function drawOverlay(canvas, state, geo) {
   const fg = state.mode === 'white' ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.55)';
   const pxPerBohr = hgt / (2 * geo.halfExtent[1]);
   const cx = w / 2, cy = hgt / 2;
+  // Compact overlay on narrow canvases (phones in portrait).
+  const compact = canvas.clientWidth < 520;
+  const k = compact ? 0.7 : 1;            // tile, gizmo and margins
+  const kt = compact ? 0.8 : 1;           // label text
+  const halo = state.mode === 'white' ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.9)';
+  const hw = 4 * dpr;
 
   // Canvas text/line state persists between frames, so isolate this draw
   // and start from known settings.
@@ -227,11 +256,11 @@ export function drawOverlay(canvas, state, geo) {
   ctx.stroke();
   ctx.setLineDash([]);
   ctx.fillStyle = fg;
-  ctx.fillText(`${Math.round(geo.horizon * BOHR_PM)} pm`, cx + r * 0.707 + 4 * dpr, cy - r * 0.707 - 4 * dpr);
+  haloText(ctx, `${Math.round(geo.horizon * BOHR_PM)} pm`, cx + r * 0.707 + 4 * dpr, cy - r * 0.707 - 4 * dpr, halo, hw);
 
   // Axes gizmo (atom frame axes projected to the screen), bottom-left.
   const m = qToMat3(state.orientation);   // atom -> view
-  const gx = 50 * dpr, gy = hgt - 50 * dpr, gl = 34 * dpr;
+  const gx = 50 * k * dpr, gy = hgt - 50 * k * dpr, gl = 34 * k * dpr;
   const axes = [0, 1, 2]
     .map(a => ({ a, v: [m[0][a], m[1][a], m[2][a]] }))
     .sort((p, q) => p.v[2] - q.v[2]);      // draw back-to-front
@@ -249,7 +278,7 @@ export function drawOverlay(canvas, state, geo) {
   // Scale bar: 1 Å, or 1 a0 if that is too short / long.
   let len = 100 / BOHR_PM, label = '1 Å';
   if (len * pxPerBohr > w * 0.3) { len = 1; label = '1 a₀'; }
-  const bx = w - 30 * dpr - len * pxPerBohr, by = hgt - 30 * dpr;
+  const bx = w - 30 * k * dpr - len * pxPerBohr, by = hgt - 30 * k * dpr;
   ctx.strokeStyle = ctx.fillStyle = fg;
   ctx.lineWidth = 2 * dpr;
   ctx.beginPath();
@@ -259,22 +288,22 @@ export function drawOverlay(canvas, state, geo) {
   ctx.stroke();
   ctx.textAlign = 'center';
   ctx.textBaseline = 'bottom';
-  ctx.fillText(label, bx + (len * pxPerBohr) / 2, by - 7 * dpr);   // centred above the bar
+  haloText(ctx, label, bx + (len * pxPerBohr) / 2, by - 7 * dpr, halo, hw);   // centred above the bar
 
   // Element tile (same rendering as the side-panel card) with name,
   // category and configuration beside it, top-left.
   const el = state.element;
-  const tx = 16 * dpr, ty = 16 * dpr;
-  drawElementTile(ctx, el, tx, ty, dpr);
-  const lx = tx + (TILE_W + 12) * dpr;
+  const tx = 16 * k * dpr, ty = 16 * k * dpr;
+  drawElementTile(ctx, el, tx, ty, k * dpr);
+  const lx = tx + (TILE_W * k + 10) * dpr;
   ctx.fillStyle = state.mode === 'white' ? 'rgba(0,0,0,0.8)' : 'rgba(255,255,255,0.85)';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
-  ctx.font = `600 ${18 * dpr}px system-ui, sans-serif`;
-  ctx.fillText(el.name, lx, ty + 4 * dpr);
+  ctx.font = `600 ${18 * kt * dpr}px system-ui, sans-serif`;
+  haloText(ctx, el.name, lx, ty + 4 * kt * dpr, halo, hw);
   ctx.fillStyle = fg;
-  ctx.font = `${12 * dpr}px system-ui, sans-serif`;
-  ctx.fillText(el.category, lx, ty + 28 * dpr);
-  ctx.fillText(el.configShort, lx, ty + 46 * dpr);
+  ctx.font = `${12 * kt * dpr}px system-ui, sans-serif`;
+  haloText(ctx, el.category, lx, ty + 28 * kt * dpr, halo, hw);
+  haloText(ctx, el.configShort, lx, ty + 46 * kt * dpr, halo, hw);
   ctx.restore();
 }

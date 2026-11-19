@@ -162,7 +162,8 @@ function frame(t) {
     // Radial inset only changes with the element or the *target* view scale,
     // so it updates once per switch rather than every animation frame.
     const target = viewGeometry(state.element, glCanvas.width, glCanvas.height, state.zoom, state.fixedScale);
-    const key = `${state.element.z}|${state.fixedScale}|${target.halfExtent[1].toFixed(4)}`;
+    const radialW = document.getElementById('radial').clientWidth;   // redraw after layout changes
+    const key = `${state.element.z}|${state.fixedScale}|${target.halfExtent[1].toFixed(4)}|${radialW}`;
     if (key !== radialKey) { radialKey = key; radial.draw(state, target); }
   }
   const dt = t - lastT;

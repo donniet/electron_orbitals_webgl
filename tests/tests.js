@@ -12,6 +12,7 @@ import {
 import { createRenderer, viewGeometry, orbitalPeak, orbitalGains, MAX_HORIZON, shapePeak } from '../js/renderer.js';
 import { loadTables } from '../js/tables.js';
 import { createScaleAnimator } from '../js/view.js';
+import { pinchZoom, ZOOM_MIN, ZOOM_MAX } from '../js/controls.js';
 
 const TABLES = await loadTables();
 const P = id => orbitalIndex(id);
@@ -333,6 +334,14 @@ test('scale animator: snap, log-space ease, retarget without jumps', () => {
   const instant = createScaleAnimator({ duration: 0 });
   instant.value(1, 0);
   near(instant.value(9, 1), 9, 0, 'duration 0 snaps');
+});
+
+test('pinch zoom follows the finger-distance ratio and clamps', () => {
+  near(pinchZoom(2, 100, 150), 3, 1e-12);
+  near(pinchZoom(2, 100, 50), 1, 1e-12);
+  near(pinchZoom(50, 100, 1000), ZOOM_MAX, 0);
+  near(pinchZoom(1, 100, 1), ZOOM_MIN, 0);
+  near(pinchZoom(3, 0, 10), 3, 0, 'degenerate start distance keeps the zoom');
 });
 
 test('viewGeometry baseOverride scales the view but keeps the true horizon', () => {

@@ -67,6 +67,9 @@ body.mode-white #view { background: #fff; }
   pointer-events: none;
 }
 body.mode-white #status { color: rgba(0, 0, 0, 0.6); }
+/* halo so the readout stays legible over the ring and the speckle */
+#status { text-shadow: 0 0 2px #000, 0 0 4px #000, 0 0 6px #000; }
+body.mode-white #status { text-shadow: 0 0 2px #fff, 0 0 4px #fff, 0 0 6px #fff; }
 
 #error {
   position: absolute;
@@ -155,6 +158,16 @@ footer { color: var(--muted); font-size: 11px; margin-top: auto; }
 }
 .card-info { flex: 1; min-width: 0; }
 .card-name { font-size: 17px; font-weight: 600; }
+.card-name-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.stepper { display: flex; gap: 4px; flex: none; }
+.stepper .step {
+  width: 28px; height: 28px; padding: 0;
+  background: var(--panel); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 5px;
+  font: 600 16px/1 system-ui, sans-serif; cursor: pointer;
+}
+.stepper .step:hover:not(:disabled) { border-color: var(--accent); }
+.stepper .step:disabled { opacity: 0.35; cursor: default; }
 .card-cat { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
 .info-row { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
 .info-row .k { color: var(--muted); }
@@ -235,3 +248,62 @@ footer { color: var(--muted); font-size: 11px; margin-top: auto; }
 .buttons button:hover:not(:disabled) { border-color: var(--accent); }
 .buttons button:disabled { opacity: 0.4; cursor: default; }
 input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
+
+/* ---------------------------------------------------------------- portrait / narrow */
+/* Stack the panel below the canvas; the stage stays pinned at the top while
+   the panel scrolls underneath it. */
+@media (orientation: portrait) and (max-width: 1024px), (max-width: 640px) {
+  body {
+    flex-direction: column;
+    overflow-y: auto;
+    height: auto;
+    min-height: 100%;
+  }
+  #stage {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    flex: none;
+  }
+  #view {
+    flex: none;
+    height: min(100vw, 58svh);
+  }
+  #panel {
+    width: auto;
+    overflow: visible;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+}
+
+/* Compact strip and status readout on narrow or short screens. */
+@media (orientation: portrait) and (max-width: 1024px), (max-width: 640px), (max-height: 520px) {
+  .ptable {
+    grid-template-columns: repeat(18, minmax(0, 26px));
+    gap: 2px;
+    padding: 6px;
+  }
+  #status {
+    top: auto;
+    right: auto;
+    bottom: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 10px;
+    white-space: nowrap;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.9);      /* pill: legible where it crosses the ring */
+  }
+  body.mode-white #status { background: rgba(255, 255, 255, 0.9); }
+  .pt-z { display: none; }
+  .pt-sym { font-size: 11px; }
+  .pt-cell { border-radius: 3px; }
+}
+
+/* Short screens (phones in landscape): smaller strip cells. */
+@media (max-height: 520px) {
+  .ptable { grid-template-columns: repeat(18, minmax(0, 22px)); padding: 4px 6px; }
+  .pt-sym { font-size: 10px; }
+}
