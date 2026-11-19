@@ -6,7 +6,7 @@
 //   ?mode=white   background mode ('dark' | 'white')
 //   ?paused=1     start paused
 //   ?density=0.2  exposure (mean detections per pixel; peak/20 if equalized)
-//   ?equalize=0   show true relative densities (default: equalized)
+//   ?equalize=1   equalize orbital brightness (default: true relative densities)
 //   ?scale=fixed  same view scale for every element (compare sizes)
 
 import { elementByZ, ELEMENTS, ORBITALS } from './elements.js';
@@ -31,7 +31,7 @@ const state = {
   orientation: defaultOrientation(),
   zoom: 1,
   density: +params.get('density') || 0.15,
-  equalize: params.get('equalize') !== '0',
+  equalize: params.get('equalize') === '1',
   fixedScale: params.get('scale') === 'fixed',
   kMax: +params.get('kmax') || 4,
   gamma: +params.get('gamma') || 0.5,
