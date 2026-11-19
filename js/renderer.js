@@ -92,10 +92,17 @@ export const HORIZON_FILL = 0.9;
 // every element so that sizes can be compared directly.
 export const MAX_HORIZON = Math.max(...ELEMENTS.map(el => horizon(el, ORBITALS)));
 
-// View geometry (Bohr) for a canvas of the given pixel size.
-export function viewGeometry(element, width, height, zoom = 1, fixedScale = false) {
+// Target half-extent (Bohr, shorter screen half-dimension) before zoom.
+export function baseHalf(element, fixedScale = false) {
+  return (fixedScale ? MAX_HORIZON : horizon(element, ORBITALS)) / HORIZON_FILL;
+}
+
+// View geometry (Bohr) for a canvas of the given pixel size. `baseOverride`
+// replaces baseHalf() (used to animate scale changes); `horizon` is always
+// the element's own, so the ring stays at its true physical size.
+export function viewGeometry(element, width, height, zoom = 1, fixedScale = false, baseOverride = null) {
   const h = horizon(element, ORBITALS);
-  const half = (fixedScale ? MAX_HORIZON : h) / HORIZON_FILL / zoom;  // shorter half-dimension
+  const half = (baseOverride ?? baseHalf(element, fixedScale)) / zoom;  // shorter half-dimension
   const aspect = width / height;
   const halfExtent = aspect >= 1 ? [half * aspect, half] : [half, half / aspect];
   return { horizon: h, halfExtent, bohrPerPixel: (2 * halfExtent[1]) / height };
@@ -136,6 +143,7 @@ export function createRenderer(canvas, tables) {
    *   kMax      - detections giving full brightness,
    *   gamma     - tone curve exponent: amount = (k / kMax)^gamma,
    *   fixedScale - same view scale for every element (compare sizes),
+   *   baseHalf  - optional animated base half-extent (see view.js),
    *   mode      - 'dark' | 'white',
    *   visible   - boolean per orbital
    * }
@@ -144,7 +152,7 @@ export function createRenderer(canvas, tables) {
     const w = canvas.width, h = canvas.height;
     gl.viewport(0, 0, w, h);
     const el = state.element;
-    const geo = viewGeometry(el, w, h, state.zoom, state.fixedScale);
+    const geo = viewGeometry(el, w, h, state.zoom, state.fixedScale, state.baseHalf ?? null);
     const viewArea = 4 * geo.halfExtent[0] * geo.halfExtent[1];
     const gains = orbitalGains(tables, el, state.density, viewArea, state.equalize);
 

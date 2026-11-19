@@ -11,6 +11,7 @@ import {
 } from '../js/math.js';
 import { createRenderer, viewGeometry, orbitalPeak, orbitalGains, MAX_HORIZON, shapePeak } from '../js/renderer.js';
 import { loadTables } from '../js/tables.js';
+import { createScaleAnimator } from '../js/view.js';
 
 const TABLES = await loadTables();
 const P = id => orbitalIndex(id);
@@ -308,6 +309,38 @@ function renderFrame(z, opts = {}) {
 }
 
 function brightness(px, x, y) { const i = 4 * (y * 256 + x); return px[i] + px[i + 1] + px[i + 2]; }
+
+test('scale animator: snap, log-space ease, retarget without jumps', () => {
+  const a = createScaleAnimator({ duration: 400 });
+  near(a.value(2, 0), 2, 0, 'first call snaps');
+  assert(!a.animating);
+  let prev = a.value(16, 1000);                    // new target at t = 1000
+  near(prev, 2, 1e-12, 'starts from the shown value');
+  assert(a.animating);
+  for (let t = 1010; t < 1400; t += 10) {
+    const v = a.value(16, t);
+    assert(v >= prev && v <= 16, `not monotonic at ${t}: ${v}`);
+    prev = v;
+  }
+  near(a.value(16, 1200), Math.sqrt(2 * 16), 1e-9, 'log-space midpoint is the geometric mean');
+  near(a.value(16, 1400), 16, 0, 'reaches the target');
+  assert(!a.animating);
+  // retarget mid-tween: continues from the current value
+  a.value(4, 2000);
+  const mid = a.value(4, 2200);
+  near(a.value(32, 2200), mid, 1e-12, 'retarget does not jump');
+  near(a.value(32, 2600), 32, 0);
+  const instant = createScaleAnimator({ duration: 0 });
+  instant.value(1, 0);
+  near(instant.value(9, 1), 9, 0, 'duration 0 snaps');
+});
+
+test('viewGeometry baseOverride scales the view but keeps the true horizon', () => {
+  const ne = ELEMENTS[9];
+  const g = viewGeometry(ne, 300, 300, 2, false, 10);
+  near(g.halfExtent[1], 5, 1e-12);
+  near(g.horizon, horizon(ne, ORBITALS), 1e-12);
+});
 
 test('GPU: same seed reproduces, new seed differs', () => {
   const a = renderFrame(1, { seed: 7 }), b = renderFrame(1, { seed: 7 }), c = renderFrame(1, { seed: 8 });

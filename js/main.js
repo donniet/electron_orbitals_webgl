@@ -12,7 +12,8 @@
 import { elementByZ, ELEMENTS, ORBITALS } from './elements.js';
 import { isValence } from './orbitals.js';
 import { qAxisAngle, qMul } from './math.js';
-import { createRenderer } from './renderer.js';
+import { createRenderer, baseHalf, viewGeometry } from './renderer.js';
+import { createScaleAnimator, prefersReducedMotion } from './view.js';
 import { loadTables } from './tables.js';
 import { attachControls } from './controls.js';
 import { buildUI, syncControls, updateElement, updateStatus, drawOverlay } from './ui.js';
@@ -128,18 +129,24 @@ function resize() {
 }
 
 let fps = 0, lastT = performance.now();
+const scaleAnim = createScaleAnimator({ duration: prefersReducedMotion() ? 0 : 450 });
 
 function frame(t) {
   resize();
   if (!state.paused) advance();
+  // Ease the view scale toward the element's (or fixed) scale.
+  state.baseHalf = scaleAnim.value(baseHalf(state.element, state.fixedScale), t);
+  if (scaleAnim.animating) dirty = true;
   if (!state.paused || dirty) {
     if (state.paused && state.debugSeed) state.seed = state.frame; // keep reproducible
     lastGeo = renderer.render(state);
     drawOverlay(overlay, state, lastGeo);
     dirty = false;
-    // Radial inset only changes with the element or the view scale.
-    const key = `${state.element.z}|${state.fixedScale}|${lastGeo.halfExtent[1].toFixed(4)}`;
-    if (key !== radialKey) { radialKey = key; radial.draw(state, lastGeo); }
+    // Radial inset only changes with the element or the *target* view scale,
+    // so it updates once per switch rather than every animation frame.
+    const target = viewGeometry(state.element, glCanvas.width, glCanvas.height, state.zoom, state.fixedScale);
+    const key = `${state.element.z}|${state.fixedScale}|${target.halfExtent[1].toFixed(4)}`;
+    if (key !== radialKey) { radialKey = key; radial.draw(state, target); }
   }
   const dt = t - lastT;
   lastT = t;
