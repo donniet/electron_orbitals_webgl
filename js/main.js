@@ -8,10 +8,11 @@
 //   ?density=0.2  exposure (mean detections per pixel; peak/20 if equalized)
 //   ?equalize=1   equalize orbital brightness (default: true relative densities)
 //   ?scale=fixed  same view scale for every element (compare sizes)
+//   ?spin=0       start without the slow default rotation
 
 import { elementByZ, ELEMENTS, ORBITALS } from './elements.js';
 import { isValence } from './orbitals.js';
-import { qAxisAngle, qMul } from './math.js';
+import { qAxisAngle, qMul, qNormalize } from './math.js';
 import { createRenderer, baseHalf, viewGeometry } from './renderer.js';
 import { createScaleAnimator, prefersReducedMotion } from './view.js';
 import { loadTables } from './tables.js';
@@ -22,6 +23,13 @@ import { createRadialPlot, radialMode } from './radial.js';
 const params = new URLSearchParams(location.search);
 
 // Default orientation: tilted so x, y and z lobes are all distinguishable.
+// Gentle spin at start (about view +y), unless the viewer prefers reduced
+// motion or ?spin=0. A fling replaces it; grabbing the atom stops it.
+function defaultSpin() {
+  if (params.get('spin') === '0' || prefersReducedMotion()) return null;
+  return { axis: [0, 1, 0], rate: 0.00025 };            // rad/ms (~14 deg/s)
+}
+
 function defaultOrientation() {
   return qMul(qAxisAngle([1, 0, 0], 0.45), qAxisAngle([0, 1, 0], -0.6));
 }
@@ -34,6 +42,7 @@ const state = {
   equalize: params.get('equalize') === '1',
   fixedScale: params.get('scale') === 'fixed',
   radialMode: 'auto',            // 'auto' | 'shell' | 'subshell'
+  spin: defaultSpin(),           // { axis, rate } in view space, or null
   kMax: +params.get('kmax') || 4,
   gamma: +params.get('gamma') || 0.5,
   mode: params.get('mode') === 'white' ? 'white' : 'dark',
@@ -129,7 +138,7 @@ const app = {
     if (app.expanded.has(id)) app.expanded.delete(id); else app.expanded.add(id);
     updateElement(app);
   },
-  resetView() { state.orientation = defaultOrientation(); state.zoom = 1; dirty = true; },
+  resetView() { state.orientation = defaultOrientation(); state.zoom = 1; state.spin = defaultSpin(); dirty = true; },
   step() { advance(); dirty = true; },
   // Download what is on screen: the WebGL frame (kept by
   // preserveDrawingBuffer) plus the 2D overlay when it is shown.
@@ -155,6 +164,7 @@ attachControls(glCanvas, {
   setOrientation: q => { state.orientation = q; dirty = true; },
   getZoom: () => state.zoom,
   setZoom: z => { state.zoom = z; dirty = true; },
+  setSpin: s => { state.spin = s; },
 });
 
 buildUI(app);
@@ -183,9 +193,20 @@ function resize() {
 let fps = 0, lastT = performance.now();
 const scaleAnim = createScaleAnimator({ duration: prefersReducedMotion() ? 0 : 450 });
 
+let lastFrameT = null;
+
 function frame(t) {
   resize();
   if (!state.paused) advance();
+  // Keep spinning (paused stops it too; dt capped so a background tab
+  // doesn't jump on return).
+  const dtSpin = lastFrameT == null ? 0 : Math.min(100, t - lastFrameT);
+  lastFrameT = t;
+  if (state.spin && !state.paused && dtSpin > 0) {
+    const dq = qAxisAngle(state.spin.axis, state.spin.rate * dtSpin);
+    state.orientation = qNormalize(qMul(dq, state.orientation));
+    dirty = true;
+  }
   // Ease the view scale toward the element's (or fixed) scale.
   state.baseHalf = scaleAnim.value(baseHalf(state.element, state.fixedScale), t);
   if (scaleAnim.animating) dirty = true;

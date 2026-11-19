@@ -12,7 +12,7 @@ import {
 import { createRenderer, viewGeometry, orbitalPeak, orbitalGains, MAX_HORIZON, shapePeak } from '../js/renderer.js';
 import { loadTables } from '../js/tables.js';
 import { createScaleAnimator } from '../js/view.js';
-import { pinchZoom, ZOOM_MIN, ZOOM_MAX } from '../js/controls.js';
+import { pinchZoom, ZOOM_MIN, ZOOM_MAX, flingSpin, FLING_MIN_SPEED, SPIN_MAX_RATE } from '../js/controls.js';
 
 const TABLES = await loadTables();
 const P = id => orbitalIndex(id);
@@ -411,6 +411,17 @@ test('pinch zoom follows the finger-distance ratio and clamps', () => {
   near(pinchZoom(50, 100, 1000), ZOOM_MAX, 0);
   near(pinchZoom(1, 100, 1), ZOOM_MIN, 0);
   near(pinchZoom(3, 0, 10), 3, 0, 'degenerate start distance keeps the zoom');
+});
+
+test('fling: spin only above the speed threshold, axis like a drag, rate capped', () => {
+  assert(flingSpin(0.5 * FLING_MIN_SPEED, 0) === null, 'slow release keeps no spin');
+  assert(flingSpin(0, 0) === null);
+  const s = flingSpin(0.5, 0);                         // flick right
+  near(s.axis[1], 1, 1e-12, 'horizontal flick spins about view +y');
+  near(s.rate, 0.5 * Math.PI / 400, 1e-12, 'rate = drag mapping');
+  const v = flingSpin(0, -0.6);                        // flick up
+  near(v.axis[0], -1, 1e-12, 'vertical flick spins about view x');
+  near(flingSpin(50, 0).rate, SPIN_MAX_RATE, 0, 'capped');
 });
 
 test('viewGeometry baseOverride scales the view but keeps the true horizon', () => {
