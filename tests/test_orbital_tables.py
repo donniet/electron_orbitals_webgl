@@ -65,8 +65,10 @@ class TestMetadata(unittest.TestCase):
             for v in row:
                 for x in v:
                     self.assertGreaterEqual(x, 0.0)
-            for x in row[-1]:
-                self.assertLess(x, 1e-10)
+            # negligible at u = uMax relative to each channel's peak
+            for ch, x in enumerate(row[-1]):
+                peak = max(v[ch] for v in row)
+                self.assertLess(x, 1e-10 * max(peak, 1.0))
 
 
 class TestRadialFunctions(unittest.TestCase):
@@ -118,10 +120,41 @@ class TestAngular(unittest.TestCase):
             self.assertAlmostEqual(a, b)
 
 
+class TestFShapes(unittest.TestCase):
+    def test_seven_f_shapes_with_symmetric_tensors(self):
+        fs = [sh for sh in SHAPES if sh.l == 3]
+        self.assertEqual(len(fs), 7)
+        for sh in fs:
+            C = sh.C
+            for i in range(3):
+                for j in range(3):
+                    for k in range(3):
+                        self.assertAlmostEqual(C[i][j][k], C[j][i][k])
+                        self.assertAlmostEqual(C[i][j][k], C[i][k][j])
+            # traceless (harmonic): sum_i C[i][i][k] = 0 for every k
+            for k in range(3):
+                self.assertAlmostEqual(sum(C[i][i][k] for i in range(3)), 0.0, places=12, msg=sh.label)
+
+    def test_f_shapes_orthogonal(self):
+        fs = [sh for sh in SHAPES if sh.l == 3]
+        nt, nphi = 120, 120
+        pts = []
+        for i in range(nt):
+            th = math.pi * (i + 0.5) / nt
+            for j in range(nphi):
+                ph = 2 * math.pi * (j + 0.5) / nphi
+                pts.append(([math.sin(th) * math.cos(ph), math.sin(th) * math.sin(ph), math.cos(th)],
+                            math.sin(th) * (math.pi / nt) * (2 * math.pi / nphi)))
+        for a in range(len(fs)):
+            for b in range(a + 1, len(fs)):
+                acc = sum(w * orb.cform(fs[a].C, v, v, v) * orb.cform(fs[b].C, v, v, v) for v, w in pts)
+                self.assertAlmostEqual(acc, 0.0, delta=1e-3, msg=f"{fs[a].label}.{fs[b].label}")
+
+
 class TestClosedForms(unittest.TestCase):
     def test_b_zero(self):
         # 1s: R^2 = 4 e^{-2r}; 2p (Z=2): R^2 / r^2 = (4/3) e^{-2r}
-        want = {"1s": (4, 2, 6), "2p": (4 / 3, 2 / 3, 2)}
+        want = {"1s": (4, 2, 6, 45), "2p": (4 / 3, 2 / 3, 2, 15)}
         for name, vals in want.items():
             row = orb.ROW_NAMES.index(name)
             for got, w in zip(TABLES[row][0], vals):
@@ -198,7 +231,9 @@ class TestUnsold(unittest.TestCase):
 class TestMonteCarlo(unittest.TestCase):
     def test_sampled_histograms_match_tables(self):
         for i, (lab, d) in enumerate([("3s", [0, 0, 1]), ("4px", [0, 0.6, 0.8]),
-                                      ("3dxy", [0, 0, 1]), ("3dz2", [0.6, 0, 0.8])]):
+                                      ("3dxy", [0, 0, 1]), ("3dz2", [0.6, 0, 0.8]),
+                                      ("6s", [0.6, 0, 0.8]), ("4fxyz", [0, 0, 1]),
+                                      ("4fz3", [0.36, 0.48, 0.8])]):
             err, _ = gt.mc_shape_check(TABLES, BY_LABEL[lab], d, n_samples=20000, seed=100 + i)
             self.assertLess(err, 0.012, lab)
 

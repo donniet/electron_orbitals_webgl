@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Generate the orbital column-density moment tables (stdlib only).
 
-For each radial function (1s 2s 3s 4s 2p 3p 4p 3d) the moments
+For each radial function (1s..4f, see tools/orbitals.py RADIAL) the moments
 
-    I_k(u) = int R(r)^2 t^k / r^(2l) dt,   r = sqrt(u^2 + t^2),  k = 0, 2, 4
+    I_k(u) = int R(r)^2 t^k / r^(2l) dt,   r = sqrt(u^2 + t^2),  k = 0, 2, 4, 6
 
 are tabulated in the scaled variable u = Z b / n (reference charge Z0 = n),
 1024 samples on [0, 30]. Output:
@@ -11,8 +11,8 @@ are tabulated in the scaled variable u = Z b / n (reference charge Z0 = n),
     data/orbital_tables.bin   float32 little-endian, [row][i][RGBA]
     data/orbital_tables.json  metadata (N, uMax, rows, channels)
 
-Each texel holds (I0, I2, I4, 0). tools/orbitals.py has the math that turns
-moments into column densities for s, p and d orbitals.
+Each texel holds (I0, I2, I4, I6). tools/orbitals.py has the math that turns
+moments into column densities for s, p, d and f orbitals.
 
 `--verify` runs a Monte Carlo simulation: electron positions are sampled
 from |psi|^2, projected onto an image plane and histogrammed; the histograms
@@ -46,7 +46,7 @@ def moments_at(u):
     """[[I0, I2, I4] per radial row] at scaled impact parameter u."""
     h = M_T_MAX / M_T_STEPS
     rads = orb.RADIALS
-    acc = [[0.0, 0.0, 0.0] for _ in rads]
+    acc = [[0.0, 0.0, 0.0, 0.0] for _ in rads]
     polys = [(r.norm, r.poly) for r in rads]
     for i in range(M_T_STEPS + 1):
         t = i * h
@@ -63,6 +63,7 @@ def moments_at(u):
             a[0] += q2
             a[1] += q2 * t2
             a[2] += q2 * t2 * t2
+            a[3] += q2 * t2 * t2 * t2
     f = 2.0 * h / 3.0     # Simpson weight x2 for the symmetric half-line
     return [[v * f for v in a] for a in acc]
 
@@ -79,8 +80,8 @@ def write_moment_tables(tables, bin_path=BIN_PATH, meta_path=META_PATH):
     n = len(tables[0])
     arr = array.array("f")
     for row in tables:
-        for i0, i2, i4 in row:
-            arr.extend((i0, i2, i4, 0.0))
+        for i0, i2, i4, i6 in row:
+            arr.extend((i0, i2, i4, i6))
     if sys.byteorder == "big":
         arr.byteswap()
     os.makedirs(os.path.dirname(bin_path), exist_ok=True)
@@ -91,7 +92,7 @@ def write_moment_tables(tables, bin_path=BIN_PATH, meta_path=META_PATH):
         "format": "float32 little-endian, layout [row][i][channel], RGBA texel per sample",
         "N": n,
         "uMax": M_U_MAX,
-        "channels": ["I0", "I2", "I4", "unused"],
+        "channels": ["I0", "I2", "I4", "I6"],
         "rows": [{"name": nm, "n": nn, "l": ll}
                  for nm, (nn, ll) in zip(orb.ROW_NAMES, orb.RADIAL)],
     }
@@ -110,7 +111,7 @@ def load_moment_tables(bin_path=BIN_PATH, meta_path=META_PATH):
         arr.byteswap()
     n, rows = meta["N"], len(meta["rows"])
     assert len(arr) == rows * n * 4, (len(arr), rows, n)
-    tables = [[(arr[(r * n + i) * 4], arr[(r * n + i) * 4 + 1], arr[(r * n + i) * 4 + 2])
+    tables = [[tuple(arr[(r * n + i) * 4 + c] for c in range(4))
                for i in range(n)] for r in range(rows)]
     return tables, meta
 
@@ -229,6 +230,8 @@ MC_CASES = [  # (shape label, view direction)
     ("1s", [0, 0, 1]), ("3s", [0, 0, 1]), ("4s", [0.6, 0, 0.8]),
     ("3pz", [0, 0, 1]), ("4px", [0, 0.6, 0.8]), ("2py", [1, 0, 0]),
     ("3dxy", [0, 0, 1]), ("3dz2", [0.6, 0, 0.8]), ("3dx2-y2", [0.36, 0.48, 0.8]),
+    ("6s", [0, 0, 1]), ("5py", [0.6, 0, 0.8]), ("4dxz", [0, 0.6, 0.8]),
+    ("4fz3", [0, 0, 1]), ("4fxyz", [0.36, 0.48, 0.8]), ("4fx(x2-3y2)", [1, 0, 0]),
 ]
 
 
@@ -255,7 +258,8 @@ def main(argv=None):
     write_moment_tables(tables)
     print(f"Wrote {BIN_PATH} and {META_PATH}")
     for name, row in zip(orb.ROW_NAMES, tables):
-        print(f"  {name}: I0(0)={row[0][0]:.6g}  I2(0)={row[0][1]:.6g}  I4(0)={row[0][2]:.6g}")
+        print(f"  {name}: I0(0)={row[0][0]:.6g}  I2(0)={row[0][1]:.6g}  "
+              f"I4(0)={row[0][2]:.6g}  I6(0)={row[0][3]:.6g}")
 
     if args.verify:
         print("Monte Carlo verification ...")
