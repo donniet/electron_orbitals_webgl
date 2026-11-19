@@ -210,7 +210,12 @@ export function drawOverlay(canvas, state, geo) {
   const pxPerBohr = hgt / (2 * geo.halfExtent[1]);
   const cx = w / 2, cy = hgt / 2;
 
+  // Canvas text/line state persists between frames, so isolate this draw
+  // and start from known settings.
+  ctx.save();
   ctx.font = `${12 * dpr}px system-ui, sans-serif`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
   ctx.lineWidth = 1 * dpr;
 
   // Horizon ring (2 sigma).
@@ -252,7 +257,9 @@ export function drawOverlay(canvas, state, geo) {
   ctx.moveTo(bx, by - 4 * dpr); ctx.lineTo(bx, by + 4 * dpr);
   ctx.moveTo(bx + len * pxPerBohr, by - 4 * dpr); ctx.lineTo(bx + len * pxPerBohr, by + 4 * dpr);
   ctx.stroke();
-  ctx.fillText(label, bx, by - 8 * dpr);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(label, bx + (len * pxPerBohr) / 2, by - 7 * dpr);   // centred above the bar
 
   // Element tile (same rendering as the side-panel card) with name,
   // category and configuration beside it, top-left.
@@ -269,4 +276,5 @@ export function drawOverlay(canvas, state, geo) {
   ctx.font = `${12 * dpr}px system-ui, sans-serif`;
   ctx.fillText(el.category, lx, ty + 28 * dpr);
   ctx.fillText(el.configShort, lx, ty + 46 * dpr);
+  ctx.restore();
 }
