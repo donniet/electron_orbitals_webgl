@@ -151,17 +151,8 @@ footer { color: var(--muted); font-size: 11px; margin-top: auto; }
   width: 84px;
   height: 96px;
   flex: none;
-  border-radius: 6px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  color: #fff;
+  display: block;
 }
-.card-z { position: absolute; top: 4px; left: 7px; font-size: 12px; }
-.card-sym { font-size: 38px; font-weight: 700; line-height: 1; }
-.card-mass { font-size: 11px; margin-top: 6px; opacity: 0.9; }
 .card-info { flex: 1; min-width: 0; }
 .card-name { font-size: 17px; font-weight: 600; }
 .card-cat { color: var(--muted); font-size: 12px; margin-bottom: 4px; }

@@ -4,6 +4,7 @@
 import { ELEMENTS, ORBITALS } from './elements.js';
 import { SUBSHELLS, orbitalsOf } from './orbitals.js';
 import { qToMat3, meanR2, hslCss } from './math.js';
+import { categoryClass, drawElementTile, renderTileCanvas, TILE_W } from './tile.js';
 
 const BOHR_PM = 52.9177;
 const CAPACITY = { 0: 2, 1: 6, 2: 10 };
@@ -28,9 +29,6 @@ function h(tag, attrs = {}, ...children) {
   return el;
 }
 
-function categoryClass(cat) {
-  return 'cat-' + cat.toLowerCase().replace(/[^a-z]+/g, '-');
-}
 
 export function buildUI(app) {
   // ---------------------------------------------------- periodic table
@@ -110,11 +108,11 @@ export function updateElement(app) {
     c.classList.toggle('active', +c.dataset.z === el.z);
   }
 
+  const tile = h('canvas', { class: 'card-symbol', role: 'img',
+    'aria-label': `${el.name}, atomic number ${el.z}, mass ${el.mass}` });
+  renderTileCanvas(tile, el);
   $('#element-card').replaceChildren(
-    h('div', { class: `card-symbol ${categoryClass(el.category)}` },
-      h('span', { class: 'card-z' }, String(el.z)),
-      h('span', { class: 'card-sym' }, el.symbol),
-      h('span', { class: 'card-mass' }, el.mass.toFixed(3))),
+    tile,
     h('div', { class: 'card-info' },
       h('div', { class: 'card-name' }, el.name),
       h('div', { class: 'card-cat' }, el.category),
@@ -256,9 +254,19 @@ export function drawOverlay(canvas, state, geo) {
   ctx.stroke();
   ctx.fillText(label, bx, by - 8 * dpr);
 
-  // Element label, top-left.
-  ctx.font = `600 ${28 * dpr}px system-ui, sans-serif`;
-  ctx.fillText(state.element.symbol, 20 * dpr, 44 * dpr);
+  // Element tile (same rendering as the side-panel card) with name,
+  // category and configuration beside it, top-left.
+  const el = state.element;
+  const tx = 16 * dpr, ty = 16 * dpr;
+  drawElementTile(ctx, el, tx, ty, dpr);
+  const lx = tx + (TILE_W + 12) * dpr;
+  ctx.fillStyle = state.mode === 'white' ? 'rgba(0,0,0,0.8)' : 'rgba(255,255,255,0.85)';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.font = `600 ${18 * dpr}px system-ui, sans-serif`;
+  ctx.fillText(el.name, lx, ty + 4 * dpr);
+  ctx.fillStyle = fg;
   ctx.font = `${12 * dpr}px system-ui, sans-serif`;
-  ctx.fillText(`${state.element.name} · ${state.element.configShort}`, 20 * dpr, 64 * dpr);
+  ctx.fillText(el.category, lx, ty + 28 * dpr);
+  ctx.fillText(el.configShort, lx, ty + 46 * dpr);
 }
