@@ -82,6 +82,9 @@ export function buildUI(app) {
   for (const r of document.querySelectorAll('input[name=bgmode]')) {
     r.addEventListener('change', () => r.checked && app.setMode(r.value));
   }
+  for (const r of document.querySelectorAll('input[name=resmode]')) {
+    r.addEventListener('change', () => r.checked && app.setResMode(r.value));
+  }
   $('#pause').addEventListener('click', () => app.setPaused(!app.state.paused));
   $('#step').addEventListener('click', () => app.step());
   $('#debug-seed').addEventListener('change', e => app.setDebugSeed(e.target.checked));
@@ -120,6 +123,7 @@ export function syncControls(state) {
     ? 'Peak expected detections per pixel = exposure x 20'
     : 'Mean detections per pixel per frame (if the whole atom were in view)';
   for (const r of document.querySelectorAll('input[name=bgmode]')) r.checked = r.value === state.mode;
+  for (const r of document.querySelectorAll('input[name=resmode]')) r.checked = r.value === state.resMode;
   $('#pause').textContent = state.paused ? 'Play' : 'Pause';
   $('#step').disabled = !state.paused;
   $('#debug-seed').checked = state.debugSeed;
@@ -278,10 +282,11 @@ function infoRow(k, v, title) {
   return h('div', { class: 'info-row' }, h('span', { class: 'k' }, k), val);
 }
 
-export function updateStatus(state, geo, fps) {
+export function updateStatus(state, geo, fps, renderK = 1) {
   $('#status').textContent =
     `horizon radius = 2σ = ${(geo.horizon * BOHR_PM).toFixed(0)} pm (${geo.horizon.toFixed(2)} a₀)` +
-    (fps ? `  ·  ${fps.toFixed(0)} fps` : '');
+    (fps ? `  ·  ${fps.toFixed(0)} fps` : '') +
+    (renderK > 1 ? `  ·  1/${renderK} res` : '');
 }
 
 // ------------------------------------------------------------ overlay

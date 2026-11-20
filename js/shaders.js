@@ -24,7 +24,8 @@ uniform sampler2D uTables;
 uniform int   uTableN;
 uniform float uTableUMax;
 
-uniform vec2  uResolution;   // framebuffer size (px)
+uniform vec2  uResolution;   // full canvas size (device px)
+uniform float uScale;        // render scale k: this pass draws 1/k resolution
 uniform vec2  uHalfExtent;   // half width/height of the view (Bohr)
 uniform mat3  uRot;          // view -> atom frame
 uniform uint  uSeed;         // per-frame random seed
@@ -164,7 +165,9 @@ void main() {
   // Orthographic ray through this pixel. In view space the ray is
   // (x, y, 0) + t (0, 0, 1), so (x, y, 0) is already the closest point to
   // the nucleus and b = |(x, y)|.
-  vec2 ndc = gl_FragCoord.xy / uResolution * 2.0 - 1.0;
+  // Each (low-res) fragment stands for the centre of a k x k block of device
+  // pixels, so geometry matches the native-resolution view exactly.
+  vec2 ndc = gl_FragCoord.xy * uScale / uResolution * 2.0 - 1.0;
   vec2 xy = ndc * uHalfExtent;
   vec3 p = uRot * vec3(xy, 0.0);
   vec3 d = uRot * vec3(0.0, 0.0, 1.0);

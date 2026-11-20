@@ -150,9 +150,27 @@ export function createRenderer(canvas, tables) {
    *   visible   - boolean per orbital
    * }
    */
-  function render(state) {
+  // Low-resolution target for render scale k > 1. The result is copied to
+  // the canvas with an exact integer nearest-neighbour blit (k x k blocks),
+  // independent of CSS / browser scaling.
+  let fbo = null, rbo = null, fboW = 0, fboH = 0;
+  function lowResTarget(bw, bh) {
+    if (!fbo) { fbo = gl.createFramebuffer(); rbo = gl.createRenderbuffer(); }
+    if (bw !== fboW || bh !== fboH) {
+      gl.bindRenderbuffer(gl.RENDERBUFFER, rbo);
+      gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA8, bw, bh);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, rbo);
+      fboW = bw; fboH = bh;
+    }
+    return fbo;
+  }
+
+  function render(state, k = 1) {
     const w = canvas.width, h = canvas.height;
-    gl.viewport(0, 0, w, h);
+    const bw = Math.ceil(w / k), bh = Math.ceil(h / k);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, k > 1 ? lowResTarget(bw, bh) : null);
+    gl.viewport(0, 0, bw, bh);
     const el = state.element;
     const geo = viewGeometry(el, w, h, state.zoom, state.fixedScale, state.baseHalf ?? null);
     const viewArea = 4 * geo.halfExtent[0] * geo.halfExtent[1];
@@ -177,6 +195,7 @@ export function createRenderer(canvas, tables) {
     gl.bufferSubData(gl.UNIFORM_BUFFER, 0, blockData, 0, Math.max(1, count) * STRIDE);
 
     gl.uniform2f(u.uResolution, w, h);
+    gl.uniform1f(u.uScale, k);
     gl.uniform2f(u.uHalfExtent, geo.halfExtent[0], geo.halfExtent[1]);
     gl.uniformMatrix3fv(u.uRot, false, mat3ToGL(viewToAtom(state.orientation)));
     gl.uniform1ui(u.uSeed, state.seed >>> 0);
@@ -185,6 +204,12 @@ export function createRenderer(canvas, tables) {
     gl.uniform1f(u.uGamma, state.gamma);
     gl.uniform1i(u.uMode, state.mode === 'white' ? 1 : 0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+    if (k > 1) {
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, fbo);
+      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+      gl.blitFramebuffer(0, 0, bw, bh, 0, 0, bw * k, bh * k, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
     geo.gains = gains;
     return geo;
   }

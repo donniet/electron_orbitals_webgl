@@ -93,6 +93,12 @@
         <label><input type="radio" name="bgmode" value="dark"> Dark</label>
         <label><input type="radio" name="bgmode" value="white"> White</label>
       </div>
+      <div class="row" title="Noise resolution. Full renders one sample per device pixel; Half renders at half resolution with crisp 2x2 grains. Auto drops resolution only if frames are slow.">
+        <span>Resolution</span>
+        <label><input type="radio" name="resmode" value="auto"> Auto</label>
+        <label><input type="radio" name="resmode" value="full"> Full</label>
+        <label><input type="radio" name="resmode" value="half"> Half</label>
+      </div>
       <div class="row">
         <label title="seed = frame number"><input type="checkbox" id="debug-seed"> Debug seed</label>
         <label><input type="checkbox" id="show-overlay"> Overlay</label>

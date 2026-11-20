@@ -9,6 +9,7 @@
 //   ?equalize=1   equalize orbital brightness (default: true relative densities)
 //   ?scale=fixed  same view scale for every element (compare sizes)
 //   ?spin=0       start without the slow default rotation
+//   ?res=full     noise canvas resolution: auto (default) | full | half
 
 import { elementByZ, ELEMENTS, ORBITALS } from './elements.js';
 import { isValence } from './orbitals.js';
@@ -48,6 +49,7 @@ const state = {
   mode: params.get('mode') === 'white' ? 'white' : 'dark',
   visible: ORBITALS.map(() => true),
   paused: params.get('paused') === '1',
+  resMode: ['full', 'half'].includes(params.get('res')) ? params.get('res') : 'auto',
   debugSeed: params.get('debug') === '1',
   overlay: true,
   frame: 0,
@@ -78,6 +80,26 @@ function clampInt(v, lo, hi, dflt) {
 
 const glCanvas = document.getElementById('gl');
 const overlay = document.getElementById('overlay');
+const view = document.getElementById('view');
+
+// Exact device-pixel size of the view. Per-pixel noise must map 1:1 onto
+// device pixels: any non-integer browser rescale (e.g. a 2x canvas on a 3x
+// screen) turns white noise into a periodic moire.
+let deviceSize = null;
+try {
+  const ro = new ResizeObserver(entries => {
+    const box = entries[0].devicePixelContentBoxSize?.[0];
+    deviceSize = box ? [box.inlineSize, box.blockSize] : null;
+  });
+  try { ro.observe(view, { box: 'device-pixel-content-box' }); } catch { ro.observe(view); }
+} catch { /* no ResizeObserver: fall back to clientWidth * devicePixelRatio */ }
+
+// Render scale k (1 = native): the noise is rendered at 1/k of the device
+// resolution and blitted up by exactly k with nearest-neighbour sampling, so
+// each sample becomes a clean k x k block (never a moire).
+let renderK = state.resMode === 'half' ? 2 : 1;
+let slowSince = null;
+let lastDevice = '';                      // Auto: when frames started being slow
 let renderer, tables;
 try {
   tables = await loadTables();
@@ -93,11 +115,13 @@ let lastGeo = null;
 
 const app = {
   state,
+  setResMode(m) { state.resMode = m; renderK = m === 'half' ? 2 : 1; slowSince = null; syncControls(state); dirty = true; },
   setElement(z) {
     const el = z && elementByZ(z);
     if (!el || !el.supported) return;          // greyed-out elements can't be selected
     state.element = el;
     state.visible = ORBITALS.map(() => true);
+    if (state.resMode === 'auto') { renderK = 1; slowSince = null; }   // re-try full resolution
     app.expandedShells = defaultExpandedShells(el);
     updateElement(app);
     dirty = true;
@@ -182,11 +206,30 @@ function advance() {
 }
 
 function resize() {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const w = Math.max(1, Math.round(glCanvas.clientWidth * dpr));
-  const h = Math.max(1, Math.round(glCanvas.clientHeight * dpr));
-  for (const c of [glCanvas, overlay]) {
-    if (c.width !== w || c.height !== h) { c.width = w; c.height = h; dirty = true; }
+  const dpr = window.devicePixelRatio || 1;
+  const [dw, dh] = deviceSize ||
+    [Math.round(view.clientWidth * dpr), Math.round(view.clientHeight * dpr)];
+  if (`${dw}x${dh}` !== lastDevice) {             // new size: Auto re-tries full resolution
+    lastDevice = `${dw}x${dh}`;
+    if (state.resMode === 'auto') { renderK = 1; slowSince = null; }
+  }
+  if (overlay.width !== dw || overlay.height !== dh) { overlay.width = dw; overlay.height = dh; dirty = true; }
+  // The canvas always matches device pixels exactly; render scale is
+  // applied inside the renderer (low-res pass + exact integer blit).
+  if (glCanvas.width !== dw || glCanvas.height !== dh) { glCanvas.width = dw; glCanvas.height = dh; dirty = true; }
+}
+
+// Auto resolution: if frames stay under ~45 fps for 1.5 s, halve the
+// noise-canvas resolution (k = 1 -> 2 -> 3). It is reset to full on
+// element changes and resizes rather than probing upward, so it never
+// oscillates.
+function autoResolution(t) {
+  if (state.resMode !== 'auto' || state.paused) { slowSince = null; return; }
+  if (fps > 0 && fps < 45) {
+    if (slowSince == null) slowSince = t;
+    else if (t - slowSince > 1500 && renderK < 3) { renderK++; slowSince = null; fps = 50; dirty = true; }
+  } else {
+    slowSince = null;
   }
 }
 
@@ -212,7 +255,7 @@ function frame(t) {
   if (scaleAnim.animating) dirty = true;
   if (!state.paused || dirty) {
     if (state.paused && state.debugSeed) state.seed = state.frame; // keep reproducible
-    lastGeo = renderer.render(state);
+    lastGeo = renderer.render(state, renderK);
     drawOverlay(overlay, state, lastGeo);
     dirty = false;
     // Radial inset only changes with the element or the *target* view scale,
@@ -225,7 +268,8 @@ function frame(t) {
   const dt = t - lastT;
   lastT = t;
   if (dt > 0) fps = fps * 0.9 + (1000 / dt) * 0.1;
-  if (lastGeo) updateStatus(state, lastGeo, state.paused ? 0 : fps);
+  autoResolution(t);
+  if (lastGeo) updateStatus(state, lastGeo, state.paused ? 0 : fps, renderK);
   requestAnimationFrame(frame);
 }
 
