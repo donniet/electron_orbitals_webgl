@@ -108,6 +108,21 @@ export function viewGeometry(element, width, height, zoom = 1, fixedScale = fals
   return { horizon: h, halfExtent, bohrPerPixel: (2 * halfExtent[1]) / height };
 }
 
+// Split a W x H canvas (device px) into n panes for side-by-side atoms:
+// left | right when wider than tall, otherwise top over bottom. Rects use
+// the GL origin (bottom-left) and every split falls on a multiple of the
+// render scale k, so each pane maps exactly onto k x k blocks. Pane 0 is
+// the primary atom (left / top).
+export function splitViews(W, H, k = 1, n = 1) {
+  if (n < 2) return [{ x: 0, y: 0, w: W, h: H }];
+  if (W >= H) {
+    const wl = Math.max(k, Math.floor(W / (2 * k)) * k);
+    return [{ x: 0, y: 0, w: wl, h: H }, { x: wl, y: 0, w: W - wl, h: H }];
+  }
+  const hb = Math.max(k, Math.floor(H / (2 * k)) * k);       // bottom pane height
+  return [{ x: 0, y: hb, w: W, h: H - hb }, { x: 0, y: 0, w: W, h: hb }];
+}
+
 // ------------------------------------------------------------ renderer
 export function createRenderer(canvas, tables) {
   const gl = createContext(canvas);
@@ -166,19 +181,13 @@ export function createRenderer(canvas, tables) {
     return fbo;
   }
 
-  function render(state, k = 1) {
-    const w = canvas.width, h = canvas.height;
-    const bw = Math.ceil(w / k), bh = Math.ceil(h / k);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, k > 1 ? lowResTarget(bw, bh) : null);
-    gl.viewport(0, 0, bw, bh);
-    const el = state.element;
-    const geo = viewGeometry(el, w, h, state.zoom, state.fixedScale, state.baseHalf ?? null);
-    const viewArea = 4 * geo.halfExtent[0] * geo.halfExtent[1];
-    const gains = orbitalGains(tables, el, state.density, viewArea, state.equalize);
+  const ALL_VISIBLE = ORBITALS.map(() => true);
 
+  // Pack the occupied, visible orbitals of `el` into the uniform block.
+  function uploadOrbitals(el, visible, gains) {
     let count = 0;
     ORBITALS.forEach((o, i) => {
-      if (!(el.occupancy[i] > 0) || !state.visible[i]) return;
+      if (!(el.occupancy[i] > 0) || !visible[i]) return;
       const b = STRIDE * count++;
       const [l, row, ...coefs] = shapeData[i];
       blockData[b] = el.occupancy[i];
@@ -193,27 +202,63 @@ export function createRenderer(canvas, tables) {
     });
     gl.bindBuffer(gl.UNIFORM_BUFFER, ubo);
     gl.bufferSubData(gl.UNIFORM_BUFFER, 0, blockData, 0, Math.max(1, count) * STRIDE);
+    return count;
+  }
 
-    // The 1/k buffer covers bw*k x bh*k device pixels (>= the canvas); the
-    // vertex shader scales its NDC so geometry matches the native view.
-    gl.uniform2f(u.uNdcScale, (bw * k) / w, (bh * k) / h);
-    gl.uniform2f(u.uHalfExtent, geo.halfExtent[0], geo.halfExtent[1]);
+  /**
+   * Draw one or more panes into the canvas. Each view is
+   *   { element, visible (per orbital, optional), rect: { x, y, w, h } }
+   * with rect in device pixels, GL origin (bottom-left); see splitViews().
+   * All panes share orientation, seed and tone settings. At render scale
+   * k > 1 every pane draws into the one 1/k buffer at rect / k (rect origins
+   * are multiples of k), followed by a single exact blit.
+   * Returns one geometry per view (horizon, halfExtent, gains, rect).
+   */
+  function renderViews(state, k, views) {
+    const W = canvas.width, H = canvas.height;
+    const BW = Math.ceil(W / k), BH = Math.ceil(H / k);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, k > 1 ? lowResTarget(BW, BH) : null);
+
     gl.uniformMatrix3fv(u.uRot, false, mat3ToGL(viewToAtom(state.orientation)));
     gl.uniform1ui(u.uSeed, state.seed >>> 0);
-    gl.uniform1i(u.uCount, count);
     gl.uniform1f(u.uKMax, state.kMax);
     gl.uniform1f(u.uGamma, state.gamma);
     gl.uniform1i(u.uMode, state.mode === 'white' ? 1 : 0);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+    const geos = views.map(({ element: el, visible = ALL_VISIBLE, rect }) => {
+      const bw = Math.ceil(rect.w / k), bh = Math.ceil(rect.h / k);
+      gl.viewport(rect.x / k, rect.y / k, bw, bh);
+      const geo = viewGeometry(el, rect.w, rect.h, state.zoom, state.fixedScale, state.baseHalf ?? null);
+      const viewArea = 4 * geo.halfExtent[0] * geo.halfExtent[1];
+      const gains = orbitalGains(tables, el, state.density, viewArea, state.equalize);
+      const count = uploadOrbitals(el, visible, gains);
+
+      // The pane's 1/k buffer region covers bw*k x bh*k device pixels
+      // (>= rect); the vertex shader scales its NDC so geometry matches
+      // the native view.
+      gl.uniform2f(u.uNdcScale, (bw * k) / rect.w, (bh * k) / rect.h);
+      gl.uniform2f(u.uHalfExtent, geo.halfExtent[0], geo.halfExtent[1]);
+      gl.uniform1i(u.uCount, count);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      geo.gains = gains;
+      geo.rect = rect;
+      return geo;
+    });
+
     if (k > 1) {
       gl.bindFramebuffer(gl.READ_FRAMEBUFFER, fbo);
       gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
-      gl.blitFramebuffer(0, 0, bw, bh, 0, 0, bw * k, bh * k, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+      gl.blitFramebuffer(0, 0, BW, BH, 0, 0, BW * k, BH * k, gl.COLOR_BUFFER_BIT, gl.NEAREST);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
-    geo.gains = gains;
-    return geo;
+    return geos;
   }
 
-  return { gl, render };
+  // Single atom filling the canvas.
+  function render(state, k = 1) {
+    const rect = { x: 0, y: 0, w: canvas.width, h: canvas.height };
+    return renderViews(state, k, [{ element: state.element, visible: state.visible, rect }])[0];
+  }
+
+  return { gl, render, renderViews };
 }

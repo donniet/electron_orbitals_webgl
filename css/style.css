@@ -140,6 +140,7 @@ footer { color: var(--muted); font-size: 11px; margin-top: auto; }
 }
 .pt-cell:hover { opacity: 1; }
 .pt-cell.active { opacity: 1; border-color: #fff; box-shadow: 0 0 0 1px #fff; }
+.pt-cell.second { opacity: 1; border: 1px dashed #fff; }   /* side-by-side comparison atom */
 .pt-cell[hidden] { display: none; }
 /* Collapsed table: neighbouring rows as thin, faded slivers (click expands). */
 .pt-cell.peek {

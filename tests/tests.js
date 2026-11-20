@@ -9,7 +9,7 @@ import {
   qAxisAngle, qMul, qToMat3, mat3MulVec, viewToAtom, mat3ToGL,
   meanR2, horizon, momentLookup, radialDensity, columnDensity, makeRng, poisson, pcg, hsvToRgb,
 } from '../js/math.js';
-import { createRenderer, viewGeometry, orbitalPeak, orbitalGains, MAX_HORIZON, shapePeak } from '../js/renderer.js';
+import { createRenderer, viewGeometry, orbitalPeak, orbitalGains, MAX_HORIZON, shapePeak, splitViews } from '../js/renderer.js';
 import { loadTables } from '../js/tables.js';
 import { createScaleAnimator } from '../js/view.js';
 import { pinchZoom, ZOOM_MIN, ZOOM_MAX, flingSpin, FLING_MIN_SPEED, SPIN_MAX_RATE } from '../js/controls.js';
@@ -568,6 +568,46 @@ test('GPU: Nd 4f_xyz viewed down z is a four-leaf clover', () => {
     }
   }
   assert(diag > 3 * axes, `diagonals ${diag} vs axes ${axes}`);
+});
+
+test('splitViews: panes tile the canvas on multiples of k, orientation by aspect', () => {
+  for (const [W, H, k] of [[1000, 600, 1], [1001, 601, 2], [997, 400, 3], [390, 844, 1], [391, 845, 3]]) {
+    const v = splitViews(W, H, k, 2);
+    const area = v.reduce((a, r) => a + r.w * r.h, 0);
+    assert(area === W * H, `area ${W}x${H}`);
+    for (const r of v) assert(r.x % k === 0 && r.y % k === 0, `origin not on k grid ${JSON.stringify(r)}`);
+    if (W >= H) assert(v[0].x === 0 && v[1].x === v[0].w && v[0].h === H && v[1].h === H, 'left|right');
+    else assert(v[1].y === 0 && v[0].y === v[1].h && v[0].w === W, 'top over bottom (primary on top)');
+  }
+  const one = splitViews(800, 600, 2, 1);
+  assert(one.length === 1 && one[0].w === 800 && one[0].h === 600);
+});
+
+test('GPU: two atoms side by side are each centred in their own pane', () => {
+  const W = 320, H = 160;
+  for (const k of [1, 2]) {
+    const canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    const r = createRenderer(canvas, TABLES);
+    const rects = splitViews(W, H, k, 2);
+    const state = { element: ELEMENTS[0], orientation: [0, 0, 0, 1], zoom: 1, seed: 3, density: 0.6,
+      equalize: false, kMax: 1, gamma: 1, mode: 'dark', fixedScale: false,
+      baseHalf: Math.max(...[ELEMENTS[0], ELEMENTS[1]].map(e => 2 * Math.sqrt(meanR2(1, 0, e.zeff[0])) / 0.9)) };
+    r.renderViews(state, k, [{ element: ELEMENTS[0], rect: rects[0] }, { element: ELEMENTS[1], rect: rects[1] }]);
+    const px = new Uint8Array(W * H * 4);
+    r.gl.readPixels(0, 0, W, H, r.gl.RGBA, r.gl.UNSIGNED_BYTE, px);
+    r.gl.getExtension('WEBGL_lose_context')?.loseContext();
+    rects.forEach((rc, j) => {
+      let sx = 0, sy = 0, sw = 0;
+      for (let y = rc.y; y < rc.y + rc.h; y++) for (let x = rc.x; x < rc.x + rc.w; x++) {
+        const i = 4 * (y * W + x), v = px[i] + px[i + 1] + px[i + 2];
+        sx += v * (x + 0.5); sy += v * (y + 0.5); sw += v;
+      }
+      assert(sw > 0, `pane ${j} is dark (k=${k})`);
+      near(sx / sw, rc.x + rc.w / 2, 3, `pane ${j} centroid x (k=${k})`);
+      near(sy / sw, rc.y + rc.h / 2, 3, `pane ${j} centroid y (k=${k})`);
+    });
+  }
 });
 
 test('GPU: white mode background is white', () => {

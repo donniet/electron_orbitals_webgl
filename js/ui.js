@@ -59,8 +59,13 @@ export function buildUI(app) {
       'data-z': el.z, 'data-row': row, 'data-col': col,
       // A collapsed table shows the neighbouring rows as thin "peek" slivers;
       // clicking one expands the table rather than picking a tiny target.
-      onclick: e => (e.currentTarget.classList.contains('peek')
-        ? app.setTableCollapsed(false) : app.setElement(el.z)),
+      // Shift-click (undocumented) shows a second atom side by side; a plain
+      // click goes back to a single atom.
+      onclick: e => {
+        if (e.currentTarget.classList.contains('peek')) app.setTableCollapsed(false);
+        else if (e.shiftKey) app.toggleSecond(el.z);
+        else { app.clearSecond(); app.setElement(el.z); }
+      },
     },
     h('span', { class: 'pt-z' }, String(el.z)),
     h('span', { class: 'pt-sym' }, el.symbol));
@@ -107,6 +112,7 @@ export function buildUI(app) {
     else if (e.key === ' ') { e.preventDefault(); app.setPaused(!app.state.paused); }
     else if (e.key === 'r') app.resetView();
     else if (e.key === 's') app.savePng();
+    else if (e.key === 'Escape') app.clearSecond();
   });
 }
 
@@ -147,6 +153,7 @@ export function updateTable(app) {
   const above = rows[at - 1], below = rows[at + 1];
   for (const c of cells) {
     c.classList.toggle('active', +c.dataset.z === el.z);
+    c.classList.toggle('second', !!app.state.second && +c.dataset.z === app.state.second.z);
     const row = +c.dataset.row;
     const peek = app.tableCollapsed && (row === above || row === below);
     c.classList.toggle('peek', peek);
@@ -298,9 +305,13 @@ function infoRow(k, v, title) {
   return h('div', { class: 'info-row' }, h('span', { class: 'k' }, k), val);
 }
 
-export function updateStatus(state, geo, fps, renderK = 1) {
-  $('#status').textContent =
-    `horizon radius = 2σ = ${(geo.horizon * BOHR_PM).toFixed(0)} pm (${geo.horizon.toFixed(2)} a₀)` +
+export function updateStatus(state, views, fps, renderK = 1) {
+  const h = views.map(v => v.geo.horizon);
+  const text = views.length === 1
+    ? `horizon radius = 2σ = ${(h[0] * BOHR_PM).toFixed(0)} pm (${h[0].toFixed(2)} a₀)`
+    : 'horizon radius = 2σ: ' + views.map((v, i) =>
+      `${v.element.symbol} ${(h[i] * BOHR_PM).toFixed(0)} pm`).join(' · ');
+  $('#status').textContent = text +
     (fps ? `  ·  ${fps.toFixed(0)} fps` : '') +
     (renderK > 1 ? `  ·  1/${renderK} res` : '');
 }
@@ -318,25 +329,75 @@ function haloText(ctx, text, x, y, halo, width) {
   ctx.fillText(text, x, y);
 }
 
-export function drawOverlay(canvas, state, geo) {
+// views: [{ element, geo }] with geo.rect in device px, GL origin
+// (bottom-left), from renderer.renderViews. Each pane gets its own horizon
+// ring, element tile and scale bar; the axes marker (shared orientation) is
+// drawn once, and two panes are separated by a thin divider.
+export function drawOverlay(canvas, state, views) {
   const ctx = canvas.getContext('2d');
   const w = canvas.width, hgt = canvas.height;
   ctx.clearRect(0, 0, w, hgt);
   if (!state.overlay) return;
   const dpr = w / canvas.clientWidth || 1;
   const fg = state.mode === 'white' ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.55)';
-  const pxPerBohr = hgt / (2 * geo.halfExtent[1]);
-  const cx = w / 2, cy = hgt / 2;
-  // Compact overlay on narrow canvases (phones in portrait).
-  const compact = canvas.clientWidth < 520;
-  const k = compact ? 0.7 : 1;            // tile, gizmo and margins
-  const kt = compact ? 0.8 : 1;           // label text
   const halo = state.mode === 'white' ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.9)';
   const hw = 4 * dpr;
 
   // Canvas text/line state persists between frames, so isolate this draw
   // and start from known settings.
   ctx.save();
+  // The scale is shared between panes, so only the last pane (bottom-right
+  // of the canvas) draws a scale bar.
+  views.forEach(({ element, geo }, i) => {
+    const r = geo.rect;
+    drawPane(ctx, state, element, geo, { left: r.x, top: hgt - r.y - r.h, w: r.w, h: r.h },
+      { dpr, fg, halo, hw, scaleBar: i === views.length - 1 });
+  });
+
+  // Divider between two panes.
+  if (views.length > 1) {
+    const r = views[1].geo.rect;
+    ctx.strokeStyle = fg;
+    ctx.lineWidth = 1 * dpr;
+    ctx.beginPath();
+    if (r.x > 0) { ctx.moveTo(r.x + 0.5, 0); ctx.lineTo(r.x + 0.5, hgt); }
+    else { const yTop = hgt - r.h; ctx.moveTo(0, yTop + 0.5); ctx.lineTo(w, yTop + 0.5); }
+    ctx.stroke();
+  }
+
+  // Axes gizmo (atom frame axes projected to the screen), bottom-left.
+  const k = canvas.clientWidth < 520 ? 0.7 : 1;
+  const m = qToMat3(state.orientation);   // atom -> view
+  const gx = 50 * k * dpr, gy = hgt - 50 * k * dpr, gl = 34 * k * dpr;
+  ctx.font = `${12 * dpr}px system-ui, sans-serif`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  const axes = [0, 1, 2]
+    .map(a => ({ a, v: [m[0][a], m[1][a], m[2][a]] }))
+    .sort((p, q) => p.v[2] - q.v[2]);      // draw back-to-front
+  for (const { a, v } of axes) {
+    const o = ORBITALS.find(orb => orb.subshell === '2p' && orb.axis === a);
+    ctx.strokeStyle = ctx.fillStyle = hslCss(o.hue, 90, state.mode === 'white' ? 40 : 60);
+    ctx.lineWidth = 2 * dpr;
+    ctx.beginPath();
+    ctx.moveTo(gx, gy);
+    ctx.lineTo(gx + v[0] * gl, gy - v[1] * gl);
+    ctx.stroke();
+    ctx.fillText('xyz'[a], gx + v[0] * (gl + 9 * dpr) - 3 * dpr, gy - v[1] * (gl + 9 * dpr) + 4 * dpr);
+  }
+  ctx.restore();
+}
+
+// One pane: horizon ring, scale bar and element tile within `box`
+// (device px, top-left origin).
+function drawPane(ctx, state, el, geo, box, { dpr, fg, halo, hw, scaleBar = true }) {
+  const pxPerBohr = box.h / (2 * geo.halfExtent[1]);
+  const cx = box.left + box.w / 2, cy = box.top + box.h / 2;
+  // Compact overlay on narrow panes (phones in portrait, split views).
+  const compact = box.w / dpr < 520;
+  const k = compact ? 0.7 : 1;            // tile and margins
+  const kt = compact ? 0.8 : 1;           // label text
+
   ctx.font = `${12 * dpr}px system-ui, sans-serif`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
@@ -353,27 +414,15 @@ export function drawOverlay(canvas, state, geo) {
   ctx.fillStyle = fg;
   haloText(ctx, `${Math.round(geo.horizon * BOHR_PM)} pm`, cx + r * 0.707 + 4 * dpr, cy - r * 0.707 - 4 * dpr, halo, hw);
 
-  // Axes gizmo (atom frame axes projected to the screen), bottom-left.
-  const m = qToMat3(state.orientation);   // atom -> view
-  const gx = 50 * k * dpr, gy = hgt - 50 * k * dpr, gl = 34 * k * dpr;
-  const axes = [0, 1, 2]
-    .map(a => ({ a, v: [m[0][a], m[1][a], m[2][a]] }))
-    .sort((p, q) => p.v[2] - q.v[2]);      // draw back-to-front
-  for (const { a, v } of axes) {
-    const o = ORBITALS.find(orb => orb.subshell === '2p' && orb.axis === a);
-    ctx.strokeStyle = ctx.fillStyle = hslCss(o.hue, 90, state.mode === 'white' ? 40 : 60);
-    ctx.lineWidth = 2 * dpr;
-    ctx.beginPath();
-    ctx.moveTo(gx, gy);
-    ctx.lineTo(gx + v[0] * gl, gy - v[1] * gl);
-    ctx.stroke();
-    ctx.fillText('xyz'[a], gx + v[0] * (gl + 9 * dpr) - 3 * dpr, gy - v[1] * (gl + 9 * dpr) + 4 * dpr);
-  }
+  // Scale bar: 1 Å, or 1 a0 if that is too long; bottom-right of the pane.
+  if (scaleBar) drawScaleBar(ctx, box, pxPerBohr, k, { dpr, fg, halo, hw });
+  drawPaneLabel(ctx, state, el, box, k, kt, { dpr, fg, halo, hw });
+}
 
-  // Scale bar: 1 Å, or 1 a0 if that is too short / long.
+function drawScaleBar(ctx, box, pxPerBohr, k, { dpr, fg, halo, hw }) {
   let len = 100 / BOHR_PM, label = '1 Å';
-  if (len * pxPerBohr > w * 0.3) { len = 1; label = '1 a₀'; }
-  const bx = w - 30 * k * dpr - len * pxPerBohr, by = hgt - 30 * k * dpr;
+  if (len * pxPerBohr > box.w * 0.3) { len = 1; label = '1 a₀'; }
+  const bx = box.left + box.w - 30 * k * dpr - len * pxPerBohr, by = box.top + box.h - 30 * k * dpr;
   ctx.strokeStyle = ctx.fillStyle = fg;
   ctx.lineWidth = 2 * dpr;
   ctx.beginPath();
@@ -384,11 +433,12 @@ export function drawOverlay(canvas, state, geo) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'bottom';
   haloText(ctx, label, bx + (len * pxPerBohr) / 2, by - 7 * dpr, halo, hw);   // centred above the bar
+}
 
-  // Element tile (same rendering as the side-panel card) with name,
-  // category and configuration beside it, top-left.
-  const el = state.element;
-  const tx = 16 * k * dpr, ty = 16 * k * dpr;
+// Element tile (same rendering as the side-panel card) with name, category
+// and configuration beside it, top-left of the pane.
+function drawPaneLabel(ctx, state, el, box, k, kt, { dpr, fg, halo, hw }) {
+  const tx = box.left + 16 * k * dpr, ty = box.top + 16 * k * dpr;
   drawElementTile(ctx, el, tx, ty, k * dpr);
   const lx = tx + (TILE_W * k + 10) * dpr;
   ctx.fillStyle = state.mode === 'white' ? 'rgba(0,0,0,0.8)' : 'rgba(255,255,255,0.85)';
@@ -400,5 +450,4 @@ export function drawOverlay(canvas, state, geo) {
   ctx.font = `${12 * kt * dpr}px system-ui, sans-serif`;
   haloText(ctx, el.category, lx, ty + 28 * kt * dpr, halo, hw);
   haloText(ctx, el.configShort, lx, ty + 46 * kt * dpr, halo, hw);
-  ctx.restore();
 }

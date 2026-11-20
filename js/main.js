@@ -14,7 +14,7 @@
 import { elementByZ, ELEMENTS, ORBITALS } from './elements.js';
 import { isValence } from './orbitals.js';
 import { qAxisAngle, qMul, qNormalize } from './math.js';
-import { createRenderer, baseHalf, viewGeometry } from './renderer.js';
+import { createRenderer, baseHalf, viewGeometry, splitViews } from './renderer.js';
 import { createScaleAnimator, prefersReducedMotion } from './view.js';
 import { loadTables } from './tables.js';
 import { attachControls } from './controls.js';
@@ -37,6 +37,7 @@ function defaultOrientation() {
 
 const state = {
   element: elementByZ(clampInt(params.get('z'), 1, ELEMENTS.length, 6)),
+  second: null,                  // optional second atom, shown side by side (shift-click)
   orientation: defaultOrientation(),
   zoom: 1,
   density: +params.get('density') || 1,
@@ -111,14 +112,26 @@ try {
 }
 
 let dirty = true;          // re-render while paused when something changes
-let lastGeo = null;
+let lastViews = null;          // [{ element, geo }] of the last rendered frame
 
 const app = {
   state,
   setResMode(m) { state.resMode = m; renderK = m === 'half' ? 2 : 1; slowSince = null; syncControls(state); dirty = true; },
+  // Side-by-side comparison (undocumented): shift-click another element to
+  // show it next to the primary; shift-click it again or press Esc to clear.
+  toggleSecond(z) {
+    const el = z && elementByZ(z);
+    if (!el || !el.supported || el === state.element) return;
+    state.second = state.second === el ? null : el;
+    if (state.resMode === 'auto') { renderK = 1; slowSince = null; }   // new workload: re-try full resolution
+    updateTable(app);
+    dirty = true;
+  },
+  clearSecond() { if (state.second) { state.second = null; updateTable(app); dirty = true; } },
   setElement(z) {
     const el = z && elementByZ(z);
     if (!el || !el.supported) return;          // greyed-out elements can't be selected
+    if (state.second === el) state.second = null;   // stepping onto the second atom
     state.element = el;
     state.visible = ORBITALS.map(() => true);
     if (state.resMode === 'auto') { renderK = 1; slowSince = null; }   // re-try full resolution
@@ -199,6 +212,7 @@ const radial = createRadialPlot(
 let radialKey = '';
 syncControls(state);
 updateElement(app);
+if (params.get('z2')) app.toggleSecond(clampInt(params.get('z2'), 1, ELEMENTS.length, 0));   // undocumented
 
 function advance() {
   state.frame++;
@@ -250,13 +264,20 @@ function frame(t) {
     state.orientation = qNormalize(qMul(dq, state.orientation));
     dirty = true;
   }
-  // Ease the view scale toward the element's (or fixed) scale.
-  state.baseHalf = scaleAnim.value(baseHalf(state.element, state.fixedScale), t);
+  // Ease the view scale toward the element's (or fixed) scale; with two
+  // atoms, the larger of the two so their sizes compare directly.
+  const atoms = state.second ? [state.element, state.second] : [state.element];
+  state.baseHalf = scaleAnim.value(Math.max(...atoms.map(el => baseHalf(el, state.fixedScale))), t);
   if (scaleAnim.animating) dirty = true;
   if (!state.paused || dirty) {
     if (state.paused && state.debugSeed) state.seed = state.frame; // keep reproducible
-    lastGeo = renderer.render(state, renderK);
-    drawOverlay(overlay, state, lastGeo);
+    const rects = splitViews(glCanvas.width, glCanvas.height, renderK, atoms.length);
+    const views = atoms.map((element, i) => ({
+      element, rect: rects[i], visible: i === 0 ? state.visible : undefined,   // second atom: all orbitals
+    }));
+    const geos = renderer.renderViews(state, renderK, views);
+    lastViews = views.map((v, i) => ({ element: v.element, geo: geos[i] }));
+    drawOverlay(overlay, state, lastViews);
     dirty = false;
     // Radial inset only changes with the element or the *target* view scale,
     // so it updates once per switch rather than every animation frame.
@@ -269,7 +290,7 @@ function frame(t) {
   lastT = t;
   if (dt > 0) fps = fps * 0.9 + (1000 / dt) * 0.1;
   autoResolution(t);
-  if (lastGeo) updateStatus(state, lastGeo, state.paused ? 0 : fps, renderK);
+  if (lastViews) updateStatus(state, lastViews, state.paused ? 0 : fps, renderK);
   requestAnimationFrame(frame);
 }
 
