@@ -9,7 +9,7 @@ import {
   qAxisAngle, qMul, qToMat3, mat3MulVec, viewToAtom, mat3ToGL,
   meanR2, horizon, momentLookup, radialDensity, columnDensity, makeRng, poisson, pcg, hsvToRgb,
 } from '../js/math.js';
-import { createRenderer, viewGeometry, orbitalPeak, orbitalGains, MAX_HORIZON, shapePeak, splitViews } from '../js/renderer.js';
+import { createRenderer, viewGeometry, orbitalPeak, orbitalGains, MAX_VIEW_RADIUS, shapePeak, splitViews } from '../js/renderer.js';
 import { loadTables } from '../js/tables.js';
 import { atomsOf, subshellUnion, occupiedAny, valenceUnion, defaultExpandedShells, collapsedRows, tableRow } from '../js/selection.js';
 import { createScaleAnimator } from '../js/view.js';
@@ -89,19 +89,18 @@ test('radialDensity is normalised and matches <r^2>', () => {
   }
 });
 
-test('fixed scale: same view for every element; auto: He ~0.59x H', () => {
+test('view sized to the Rahm radius; fixed scale uses the largest one', () => {
   const [H, He] = ELEMENTS;
   const fH = viewGeometry(H, 400, 300, 1, true), fHe = viewGeometry(He, 400, 300, 1, true);
   near(fH.halfExtent[1], fHe.halfExtent[1], 1e-12);
-  near(fH.halfExtent[1], MAX_HORIZON / 0.9, 1e-12);
-  const largest = ELEMENTS.filter(e => e.supported)
-    .reduce((a, e) => (horizon(e, ORBITALS) > horizon(a, ORBITALS) ? e : a));
-  near(MAX_HORIZON, horizon(largest, ORBITALS), 1e-12);
-  // the alkali metal that starts the last enabled period
-  const want = ELEMENTS.find(e => e.period === ELEMENTS[ELEMENTS.length - 1].period).symbol;
-  assert(largest.symbol === want, `largest is ${largest.symbol}, expected ${want}`);
+  near(fH.halfExtent[1], MAX_VIEW_RADIUS / 0.9, 1e-12);
+  const largest = Math.max(...ELEMENTS.filter(e => e.supported).map(e => e.atomicRadius));
+  near(MAX_VIEW_RADIUS, largest / 52.9177, 1e-12);
+  // auto: the ring (Rahm radius) fills 90% of the shorter half-dimension
   const aH = viewGeometry(H, 400, 300, 1, false), aHe = viewGeometry(He, 400, 300, 1, false);
-  near(aHe.halfExtent[1] / aH.halfExtent[1], 1 / 1.688, 1e-9);
+  near(aH.radius, 154 / 52.9177, 1e-12);
+  near(aH.halfExtent[1], aH.radius / 0.9, 1e-12);
+  near(aHe.halfExtent[1] / aH.halfExtent[1], 134 / 154, 1e-12);
 });
 
 // ------------------------------------------------------------ elements
@@ -425,11 +424,11 @@ test('fling: spin only above the speed threshold, axis like a drag, rate capped'
   near(flingSpin(50, 0).rate, SPIN_MAX_RATE, 0, 'capped');
 });
 
-test('viewGeometry baseOverride scales the view but keeps the true horizon', () => {
+test('viewGeometry baseOverride scales the view but keeps the atom\'s own radius', () => {
   const ne = ELEMENTS[9];
   const g = viewGeometry(ne, 300, 300, 2, false, 10);
   near(g.halfExtent[1], 5, 1e-12);
-  near(g.horizon, horizon(ne, ORBITALS), 1e-12);
+  near(g.radius, ne.atomicRadius / 52.9177, 1e-12);
 });
 
 test('GPU: same seed reproduces, new seed differs', () => {
@@ -511,9 +510,12 @@ test('GPU: Sc 3d_xy viewed down z is a four-leaf clover', () => {
   const i = orbitalIndex('3dxy');
   const visible = ORBITALS.map((o, j) => j === i);
   const sc = ELEMENTS[20];
-  const zoom = 6;                               // resolve the small 3d lobes
+  // Zoom so the lobes (~0.9 a0 out) land ~64 px from the centre, whatever
+  // the view's base scale.
+  const rr = 0.9;
+  const zoom = (64 * viewGeometry(sc, 256, 256, 1).bohrPerPixel) / rr;
   const g = viewGeometry(sc, 256, 256, zoom);
-  const r = Math.round(0.9 / g.bohrPerPixel);   // ~ lobe distance (a0)
+  const r = Math.round(rr / g.bohrPerPixel);
   let diag = 0, axes = 0;
   for (let s = 1; s <= 4; s++) {
     const px = renderFrame(21, { seed: s, equalize: true, density: 0.3, visible, zoom });
@@ -554,9 +556,9 @@ test('GPU: Nd 4f_xyz viewed down z is a four-leaf clover', () => {
   const i = orbitalIndex('4fxyz');
   const nd = ELEMENTS.find(e => e.symbol === 'Nd');
   const visible = ORBITALS.map((o, j) => j === i);
-  const zoom = 8;
-  const g = viewGeometry(nd, 256, 256, zoom);
   const rr = 0.8 * Math.sqrt(meanR2(4, 3, nd.zeff[i]));          // ~ lobe distance (a0)
+  const zoom = (64 * viewGeometry(nd, 256, 256, 1).bohrPerPixel) / rr;   // lobes ~64 px out
+  const g = viewGeometry(nd, 256, 256, zoom);
   const r = Math.round(rr / g.bohrPerPixel);
   assert(r > 15 && r < 110, `lobe radius ${r}px`);
   let diag = 0, axes = 0;
@@ -618,7 +620,7 @@ test('GPU: two atoms side by side are each centred in their own pane', () => {
     const rects = splitViews(W, H, k, 2);
     const state = { element: ELEMENTS[0], orientation: [0, 0, 0, 1], zoom: 1, seed: 3, density: 0.6,
       equalize: false, kMax: 1, gamma: 1, mode: 'dark', fixedScale: false,
-      baseHalf: Math.max(...[ELEMENTS[0], ELEMENTS[1]].map(e => 2 * Math.sqrt(meanR2(1, 0, e.zeff[0])) / 0.9)) };
+      baseHalf: Math.max(...[ELEMENTS[0], ELEMENTS[1]].map(e => e.atomicRadius / 52.9177 / 0.9)) };
     r.renderViews(state, k, [{ element: ELEMENTS[0], rect: rects[0] }, { element: ELEMENTS[1], rect: rects[1] }]);
     const px = new Uint8Array(W * H * 4);
     r.gl.readPixels(0, 0, W, H, r.gl.RGBA, r.gl.UNSIGNED_BYTE, px);

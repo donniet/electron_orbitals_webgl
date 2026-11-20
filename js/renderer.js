@@ -4,7 +4,7 @@ import { createContext, createProgram, createTableTexture, createEmptyVAO } from
 import { VERT, FRAG, SHADER_DEFINES } from './shaders.js';
 import { ORBITALS, NUM_ORBITALS, angularCoefs, orbitalChroma } from './orbitals.js';
 import { ELEMENTS } from './elements.js';
-import { horizon, viewToAtom, mat3ToGL, momentLookup, columnRef } from './math.js';
+import { viewToAtom, mat3ToGL, momentLookup, columnRef } from './math.js';
 
 // ------------------------------------------------------------ peaks
 // Peak column density per electron of each orbital *shape* in reference
@@ -85,27 +85,36 @@ export function orbitalGains(tables, element, density, viewArea, equalize) {
 }
 
 // ------------------------------------------------------------ view
-// Fraction of the shorter screen half-dimension covered by the horizon.
-export const HORIZON_FILL = 0.9;
+const BOHR_PM = 52.9177;
 
-// Largest horizon over all supported elements. Fixed-scale mode uses it for
-// every element so that sizes can be compared directly.
-export const MAX_HORIZON = Math.max(...ELEMENTS.filter(el => el.supported).map(el => horizon(el, ORBITALS)));
+// The view is sized to the element's Rahm atomic radius (free-atom density
+// 0.001 e/bohr^3, in elements.json): that ring fills VIEW_FILL of the
+// shorter half-dimension. (The model's own cloud can extend beyond it,
+// e.g. the single-Z_eff 4s of the 3d metals.)
+export const VIEW_FILL = 0.9;
+
+// Rahm atomic radius in Bohr.
+export function viewRadius(element) {
+  return element.atomicRadius / BOHR_PM;
+}
+
+// Largest atomic radius over all supported elements. Fixed-scale mode uses
+// it for every element so that sizes can be compared directly.
+export const MAX_VIEW_RADIUS = Math.max(...ELEMENTS.filter(el => el.supported).map(viewRadius));
 
 // Target half-extent (Bohr, shorter screen half-dimension) before zoom.
 export function baseHalf(element, fixedScale = false) {
-  return (fixedScale ? MAX_HORIZON : horizon(element, ORBITALS)) / HORIZON_FILL;
+  return (fixedScale ? MAX_VIEW_RADIUS : viewRadius(element)) / VIEW_FILL;
 }
 
 // View geometry (Bohr) for a canvas of the given pixel size. `baseOverride`
-// replaces baseHalf() (used to animate scale changes); `horizon` is always
-// the element's own, so the ring stays at its true physical size.
+// replaces baseHalf() (used to animate scale changes and to share one scale
+// between two panes); `radius` is always the element's own atomic radius.
 export function viewGeometry(element, width, height, zoom = 1, fixedScale = false, baseOverride = null) {
-  const h = horizon(element, ORBITALS);
   const half = (baseOverride ?? baseHalf(element, fixedScale)) / zoom;  // shorter half-dimension
   const aspect = width / height;
   const halfExtent = aspect >= 1 ? [half * aspect, half] : [half, half / aspect];
-  return { horizon: h, halfExtent, bohrPerPixel: (2 * halfExtent[1]) / height };
+  return { radius: viewRadius(element), halfExtent, bohrPerPixel: (2 * halfExtent[1]) / height };
 }
 
 // Split a W x H canvas (device px) into n panes for side-by-side atoms:
@@ -212,7 +221,7 @@ export function createRenderer(canvas, tables) {
    * All panes share orientation, seed and tone settings. At render scale
    * k > 1 every pane draws into the one 1/k buffer at rect / k (rect origins
    * are multiples of k), followed by a single exact blit.
-   * Returns one geometry per view (horizon, halfExtent, gains, rect).
+   * Returns one geometry per view (radius, halfExtent, gains, rect).
    */
   function renderViews(state, k, views) {
     const W = canvas.width, H = canvas.height;
