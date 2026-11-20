@@ -1,7 +1,8 @@
 // App bootstrap and animation loop.
 //
 // URL parameters (handy for debugging / screenshots):
-//   ?z=6          element (1..10)
+//   ?z=6          element (1..86)
+//   ?z2=8         second element, shown side by side
 //   ?debug=1      seed = frame number (reproducible frames)
 //   ?mode=white   background mode ('dark' | 'white')
 //   ?paused=1     start paused
@@ -10,6 +11,8 @@
 //   ?scale=fixed  same view scale for every element (compare sizes)
 //   ?spin=0       start without the slow default rotation
 //   ?res=full     noise canvas resolution: auto (default) | full | half
+//   ?kmax=4       counts for full brightness
+//   ?gamma=0.5    tone gamma
 
 import { elementByZ, ELEMENTS, ORBITALS } from './elements.js';
 import { qAxisAngle, qMul, qNormalize } from './math.js';
@@ -239,7 +242,7 @@ const radial = createRadialPlot(
 let radialKey = '';
 syncControls(state);
 updateElement(app);
-if (params.get('z2')) app.toggleSecond(clampInt(params.get('z2'), 1, ELEMENTS.length, 0));   // undocumented
+if (params.get('z2')) app.toggleSecond(clampInt(params.get('z2'), 1, ELEMENTS.length, 0));
 
 function advance() {
   state.frame++;
