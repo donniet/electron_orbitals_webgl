@@ -1,7 +1,7 @@
 // Draws one frame of the probabilistic orbital image.
 
 import { createContext, createProgram, createTableTexture, createEmptyVAO } from './gl.js';
-import { VERT, FRAG } from './shaders.js';
+import { VERT, FRAG, SHADER_DEFINES } from './shaders.js';
 import { ORBITALS, NUM_ORBITALS, angularCoefs, orbitalChroma } from './orbitals.js';
 import { ELEMENTS } from './elements.js';
 import { horizon, viewToAtom, mat3ToGL, momentLookup, columnRef } from './math.js';
@@ -111,7 +111,7 @@ export function viewGeometry(element, width, height, zoom = 1, fixedScale = fals
 // ------------------------------------------------------------ renderer
 export function createRenderer(canvas, tables) {
   const gl = createContext(canvas);
-  const { prog, uniforms: u } = createProgram(gl, VERT, FRAG);
+  const { prog, uniforms: u } = createProgram(gl, VERT, FRAG, { defines: SHADER_DEFINES });
   const tex = createTableTexture(gl, tables.data, tables.N, tables.rows.length);
   createEmptyVAO(gl);
 

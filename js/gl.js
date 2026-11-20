@@ -18,10 +18,23 @@ function compile(gl, type, src) {
   return sh;
 }
 
-export function createProgram(gl, vertSrc, fragSrc) {
+// Insert `#define NAME value` lines right after the first line (which must
+// stay `#version ...`), then `#line 2` so compiler errors still report the
+// line numbers of the .glsl file.
+export function withDefines(src, defines = {}) {
+  const entries = Object.entries(defines);
+  if (entries.length === 0) return src;
+  const nl = src.indexOf('\n');
+  const head = src.slice(0, nl + 1), body = src.slice(nl + 1);
+  if (!/^\s*#version/.test(head)) throw new Error('Shader source must start with #version');
+  const lines = entries.map(([k, v]) => `#define ${k} ${v}`).join('\n');
+  return `${head}${lines}\n#line 2\n${body}`;
+}
+
+export function createProgram(gl, vertSrc, fragSrc, { defines = {} } = {}) {
   const prog = gl.createProgram();
-  gl.attachShader(prog, compile(gl, gl.VERTEX_SHADER, vertSrc));
-  gl.attachShader(prog, compile(gl, gl.FRAGMENT_SHADER, fragSrc));
+  gl.attachShader(prog, compile(gl, gl.VERTEX_SHADER, withDefines(vertSrc, defines)));
+  gl.attachShader(prog, compile(gl, gl.FRAGMENT_SHADER, withDefines(fragSrc, defines)));
   gl.linkProgram(prog);
   if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
     throw new Error('Program link error:\n' + gl.getProgramInfoLog(prog));

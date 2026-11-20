@@ -48,4 +48,10 @@ http://localhost:8000/tests/test.html for the in-browser tests. Python tests:
 `python3 tools/gen_tables.py --verify`.
 
 http.server does not send no-cache headers, so hard-reload (Ctrl+Shift+R)
-after editing files if the browser shows stale code.
+after editing files (including the shaders) if the browser shows stale code.
+
+The GLSL lives in `shaders/vertex.glsl` and `shaders/fragment.glsl` and is
+loaded by `js/shaders.js`. Build-time constants such as `NUM_ORBITALS` are not
+written in the .glsl files: `createProgram` in `js/gl.js` injects them as
+`#define`s right after the `#version` line (followed by `#line 2`, so compiler
+errors still point at the right line of the file).
