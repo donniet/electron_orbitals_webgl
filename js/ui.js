@@ -447,10 +447,19 @@ export function drawOverlay(canvas, state, views) {
   ctx.save();
   // The scale is shared between panes, so only the last pane (bottom-right
   // of the canvas) draws a scale bar.
+  // Each pane's ring, labels and tile are clipped to the pane, so a ring
+  // larger than its pane (zoomed in, or sized for the bigger atom) never
+  // spills into the neighbouring pane.
   views.forEach(({ element, geo }, i) => {
     const r = geo.rect;
-    drawPane(ctx, state, element, geo, { left: r.x, top: hgt - r.y - r.h, w: r.w, h: r.h },
+    const box = { left: r.x, top: hgt - r.y - r.h, w: r.w, h: r.h };
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(box.left, box.top, box.w, box.h);
+    ctx.clip();
+    drawPane(ctx, state, element, geo, box,
       { dpr, fg, halo, hw, scaleBar: i === views.length - 1, badge: views.length > 1 ? 'AB'[i] : null });
+    ctx.restore();
   });
 
   // Divider between two panes.
