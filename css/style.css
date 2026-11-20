@@ -141,6 +141,18 @@ footer { color: var(--muted); font-size: 11px; margin-top: auto; }
 .pt-cell:hover { opacity: 1; }
 .pt-cell.active { opacity: 1; border-color: #fff; box-shadow: 0 0 0 1px #fff; }
 .pt-cell[hidden] { display: none; }
+/* Collapsed table: neighbouring rows as thin, faded slivers (click expands). */
+.pt-cell.peek {
+  aspect-ratio: auto;
+  height: 7px;
+  opacity: 0.3;
+  border-radius: 2px;
+  box-shadow: none;
+  border-color: transparent;
+  margin-top: 0;
+}
+.pt-cell.peek > span { display: none; }
+.pt-cell.peek:hover { opacity: 0.6; }
 .pt-cell.f-row { margin-top: 6px; }
 .ptable.collapsed .pt-cell.f-row { margin-top: 0; }
 .pt-marker { display: flex; align-items: center; justify-content: center; cursor: default; opacity: 0.7; }

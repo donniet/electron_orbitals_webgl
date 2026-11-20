@@ -57,10 +57,14 @@ export function buildUI(app) {
         (fBlock ? ' f-row' : ''),
       title: el.supported ? el.name : `${el.name} — not available: ${el.unsupportedReason}`,
       'data-z': el.z, 'data-row': row, 'data-col': col,
-      onclick: () => app.setElement(el.z),
+      // A collapsed table shows the neighbouring rows as thin "peek" slivers;
+      // clicking one expands the table rather than picking a tiny target.
+      onclick: e => (e.currentTarget.classList.contains('peek')
+        ? app.setTableCollapsed(false) : app.setElement(el.z)),
     },
     h('span', { class: 'pt-z' }, String(el.z)),
     h('span', { class: 'pt-sym' }, el.symbol));
+    cell.dataset.title = cell.title;
     pt.append(cell);
   }
   if (ELEMENTS.some(el => el.group == null)) {
@@ -134,12 +138,24 @@ export function syncControls(state) {
 export function updateTable(app) {
   const el = app.state.element;
   const current = el.group == null ? 8 : el.period;
-  for (const c of document.querySelectorAll('#ptable .pt-cell')) {
+  const cells = [...document.querySelectorAll('#ptable .pt-cell')];
+  // Collapsed: the current row in full, plus thin "peek" slivers of the rows
+  // directly above and below (in table order: periods, then the f-block row)
+  // hinting that there is a whole table to expand.
+  const rows = [...new Set(cells.map(c => +c.dataset.row))].sort((a, b) => a - b);
+  const at = rows.indexOf(current);
+  const above = rows[at - 1], below = rows[at + 1];
+  for (const c of cells) {
     c.classList.toggle('active', +c.dataset.z === el.z);
     const row = +c.dataset.row;
-    c.hidden = app.tableCollapsed && row !== current;
+    const peek = app.tableCollapsed && (row === above || row === below);
+    c.classList.toggle('peek', peek);
+    c.hidden = app.tableCollapsed && row !== current && !peek;
+    if (c.tagName === 'BUTTON') c.tabIndex = peek ? -1 : 0;
+    if (peek) c.title = 'Show the whole periodic table';
+    else if (c.dataset.title) c.title = c.dataset.title;
     c.style.gridColumn = c.dataset.col;
-    c.style.gridRow = app.tableCollapsed ? 1 : row;
+    c.style.gridRow = !app.tableCollapsed ? row : row === above ? 1 : row === current ? 2 : 3;
   }
   const t = $('#ptable-toggle');
   t.textContent = app.tableCollapsed ? '▾' : '▴';
