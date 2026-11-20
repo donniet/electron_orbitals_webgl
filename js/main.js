@@ -12,13 +12,13 @@
 //   ?res=full     noise canvas resolution: auto (default) | full | half
 
 import { elementByZ, ELEMENTS, ORBITALS } from './elements.js';
-import { isValence } from './orbitals.js';
 import { qAxisAngle, qMul, qNormalize } from './math.js';
 import { createRenderer, baseHalf, viewGeometry, splitViews } from './renderer.js';
 import { createScaleAnimator, prefersReducedMotion } from './view.js';
 import { loadTables } from './tables.js';
 import { attachControls } from './controls.js';
-import { buildUI, syncControls, updateElement, updateTable, updateStatus, drawOverlay, defaultExpandedShells } from './ui.js';
+import { buildUI, syncControls, updateElement, updateTable, updateStatus, drawOverlay } from './ui.js';
+import { atomsOf, valenceUnion, defaultExpandedShells } from './selection.js';
 import { createRadialPlot, radialMode } from './radial.js';
 
 const params = new URLSearchParams(location.search);
@@ -57,9 +57,19 @@ const state = {
   seed: 0,
 };
 
+// After A or B changes: expand the selection's shells, re-try full
+// resolution for the new workload, refresh the panel and redraw.
+function selectionChanged() {
+  app.expandedShells = defaultExpandedShells(atomsOf(state));
+  if (state.resMode === 'auto') { renderK = 1; slowSince = null; }
+  updateElement(app);
+  dirty = true;
+}
+
 function syncRadialButtons() {
   const mode = radialMode(state, state.element);
-  for (const [id, m] of [['radial-shells', 'shell'], ['radial-subshells', 'subshell']]) {
+  document.getElementById('radial-compare').hidden = !state.second;
+  for (const [id, m] of [['radial-shells', 'shell'], ['radial-subshells', 'subshell'], ['radial-compare', 'compare']]) {
     const b = document.getElementById(id);
     b.classList.toggle('on', mode === m);
     b.setAttribute('aria-pressed', String(mode === m));
@@ -119,25 +129,41 @@ const app = {
   setResMode(m) { state.resMode = m; renderK = m === 'half' ? 2 : 1; slowSince = null; syncControls(state); dirty = true; },
   // Side-by-side comparison (undocumented): shift-click another element to
   // show it next to the primary; shift-click it again or press Esc to clear.
+  // Shift-click / long-press an element, or tap one while "Compare" is
+  // armed: it becomes atom B (or stops being B if it already is).
   toggleSecond(z) {
     const el = z && elementByZ(z);
-    if (!el || !el.supported || el === state.element) return;
-    state.second = state.second === el ? null : el;
-    if (state.resMode === 'auto') { renderK = 1; slowSince = null; }   // new workload: re-try full resolution
-    updateTable(app);
-    dirty = true;
+    app.pickingSecond = false;
+    if (el && el.supported && el !== state.element) {
+      state.second = state.second === el ? null : el;
+      selectionChanged();
+    } else {
+      updateTable(app);
+      updateElement(app);
+    }
   },
-  clearSecond() { if (state.second) { state.second = null; updateTable(app); dirty = true; } },
+  clearSecond() {
+    const had = !!state.second;
+    state.second = null;
+    if (had) selectionChanged();
+  },
+  swapAtoms() {
+    if (!state.second) return;
+    [state.element, state.second] = [state.second, state.element];
+    selectionChanged();
+  },
+  pickingSecond: false,
+  togglePicking() {
+    app.pickingSecond = !app.pickingSecond;
+    updateElement(app);
+  },
   setElement(z) {
     const el = z && elementByZ(z);
     if (!el || !el.supported) return;          // greyed-out elements can't be selected
     if (state.second === el) state.second = null;   // stepping onto the second atom
     state.element = el;
     state.visible = ORBITALS.map(() => true);
-    if (state.resMode === 'auto') { renderK = 1; slowSince = null; }   // re-try full resolution
-    app.expandedShells = defaultExpandedShells(el);
-    updateElement(app);
-    dirty = true;
+    selectionChanged();
   },
   setDensity(d) { state.density = d; syncControls(state); dirty = true; },
   setKMax(k) { state.kMax = k; syncControls(state); dirty = true; },
@@ -153,7 +179,8 @@ const app = {
   setVisibleMany(idx, b) { for (const i of idx) state.visible[i] = b; updateElement(app); dirty = true; },
   showAll() { app.setVisibleMany(ORBITALS.map((o, i) => i), true); },
   showValence() {
-    state.visible = ORBITALS.map(o => isValence(o, state.element));
+    const valence = valenceUnion(atomsOf(state));
+    state.visible = ORBITALS.map((o, i) => valence.has(i));
     updateElement(app);
     dirty = true;
   },
@@ -166,7 +193,7 @@ const app = {
     updateTable(app);
   },
   expanded: new Set(),
-  expandedShells: defaultExpandedShells(state.element),
+  expandedShells: defaultExpandedShells([state.element]),
   toggleShell(n) {
     if (app.expandedShells.has(n)) app.expandedShells.delete(n); else app.expandedShells.add(n);
     updateElement(app);
@@ -283,7 +310,7 @@ function frame(t) {
     // so it updates once per switch rather than every animation frame.
     const target = viewGeometry(state.element, glCanvas.width, glCanvas.height, state.zoom, state.fixedScale);
     const radialW = document.getElementById('radial').clientWidth;   // redraw after layout changes
-    const key = `${state.element.z}|${state.fixedScale}|${target.halfExtent[1].toFixed(4)}|${radialW}|${state.radialMode}`;
+    const key = `${state.element.z}|${state.second?.z ?? 0}|${state.fixedScale}|${target.halfExtent[1].toFixed(4)}|${radialW}|${state.radialMode}`;
     if (key !== radialKey) { radialKey = key; radial.draw(state, target); syncRadialButtons(); }
   }
   const dt = t - lastT;

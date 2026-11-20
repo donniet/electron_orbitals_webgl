@@ -11,6 +11,7 @@ import {
 } from '../js/math.js';
 import { createRenderer, viewGeometry, orbitalPeak, orbitalGains, MAX_HORIZON, shapePeak, splitViews } from '../js/renderer.js';
 import { loadTables } from '../js/tables.js';
+import { atomsOf, subshellUnion, occupiedAny, valenceUnion, defaultExpandedShells, collapsedRows, tableRow } from '../js/selection.js';
 import { createScaleAnimator } from '../js/view.js';
 import { pinchZoom, ZOOM_MIN, ZOOM_MAX, flingSpin, FLING_MIN_SPEED, SPIN_MAX_RATE } from '../js/controls.js';
 
@@ -568,6 +569,31 @@ test('GPU: Nd 4f_xyz viewed down z is a four-leaf clover', () => {
     }
   }
   assert(diag > 3 * axes, `diagonals ${diag} vs axes ${axes}`);
+});
+
+test('selection: unions over A and B', () => {
+  const E = sym => ELEMENTS.find(e => e.symbol === sym);
+  const fe = E('Fe'), kr = E('Kr'), h = E('H');
+  assert(atomsOf({ element: fe, second: null }).length === 1 && atomsOf({ element: fe, second: kr }).length === 2);
+  const u = subshellUnion([fe, kr]);
+  assert(u.has('3d') && u.has('4p') && !u.has('4d'), [...u].join());
+  assert(occupiedAny([fe, kr], orbitalIndex('4pz')) && !occupiedAny([fe], orbitalIndex('4pz')));
+  const v = valenceUnion([fe, kr]);
+  assert(v.has(orbitalIndex('3dxy')) && v.has(orbitalIndex('4px')) && v.has(orbitalIndex('4s')), 'Fe 3d + Kr 4p + 4s');
+  assert(!v.has(orbitalIndex('2px')), 'core 2p is not valence');
+  const sh = defaultExpandedShells([h, fe]);
+  assert(sh.has(1) && sh.has(3) && sh.has(4), [...sh].join());     // H valence 1s, Fe valence 3d + 4s
+});
+
+test('collapsedRows: full rows for A and B, peeks next to them', () => {
+  const rows = [1, 2, 3, 4, 5, 6, 8];
+  const show = full => collapsedRows(rows, full).map(r => (r.peek ? `(${r.row})` : String(r.row))).join(' ');
+  assert(show([4]) === '(3) 4 (5)', show([4]));
+  assert(show([4, 4]) === '(3) 4 (5)', 'same period: one row');
+  assert(show([2, 5]) === '(1) 2 (3) (4) 5 (6)', show([2, 5]));
+  assert(show([1, 8]) === '1 (2) (6) 8', show([1, 8]));
+  assert(collapsedRows(rows, [3, 4]).map(r => r.gridRow).join() === '1,2,3,4', 'consecutive grid rows');
+  assert(tableRow(ELEMENTS.find(e => e.symbol === 'Nd')) === 8 && tableRow(ELEMENTS[25]) === 4);
 });
 
 test('splitViews: panes tile the canvas on multiples of k, orientation by aspect', () => {

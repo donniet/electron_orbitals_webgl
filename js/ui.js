@@ -2,7 +2,8 @@
 // 2D overlay drawn over the WebGL canvas (horizon ring, axes, scale bar).
 
 import { ELEMENTS, ORBITALS, stepElement } from './elements.js';
-import { SUBSHELLS, orbitalsOf, orbitalChroma, valenceSubshells } from './orbitals.js';
+import { SUBSHELLS, orbitalsOf, orbitalChroma } from './orbitals.js';
+import { atomsOf, occupiedAny, maxPeriod, collapsedRows, tableRow } from './selection.js';
 import { qToMat3, meanR2, hslCss } from './math.js';
 import { categoryClass, drawElementTile, renderTileCanvas, TILE_W } from './tile.js';
 
@@ -18,13 +19,6 @@ function orbitalCss(o, el) {
 
 const SHELL_LETTER = { 1: 'K', 2: 'L', 3: 'M', 4: 'N', 5: 'O', 6: 'P' };
 
-// Shells expanded by default: those holding valence subshells, or every
-// shell for light atoms (few subshells).
-export function defaultExpandedShells(el) {
-  const occupied = Object.keys(el.subshells);
-  if (occupied.length <= 6) return new Set(occupied.map(id => +id[0]));
-  return new Set([...valenceSubshells(el)].map(id => +id[0]));
-}
 
 const $ = sel => document.querySelector(sel);
 
@@ -59,17 +53,20 @@ export function buildUI(app) {
       'data-z': el.z, 'data-row': row, 'data-col': col,
       // A collapsed table shows the neighbouring rows as thin "peek" slivers;
       // clicking one expands the table rather than picking a tiny target.
-      // Shift-click (undocumented) shows a second atom side by side; a plain
-      // click goes back to a single atom.
+      // Shift-click, long-press, or a tap while "Compare" is armed shows a
+      // second atom side by side; a plain click goes back to a single atom.
       onclick: e => {
-        if (e.currentTarget.classList.contains('peek')) app.setTableCollapsed(false);
-        else if (e.shiftKey) app.toggleSecond(el.z);
+        const c = e.currentTarget;
+        if (c.dataset.longpressed) { delete c.dataset.longpressed; return; }   // handled on press
+        if (c.classList.contains('peek')) app.setTableCollapsed(false);
+        else if (e.shiftKey || app.pickingSecond) app.toggleSecond(el.z);
         else { app.clearSecond(); app.setElement(el.z); }
       },
     },
     h('span', { class: 'pt-z' }, String(el.z)),
     h('span', { class: 'pt-sym' }, el.symbol));
     cell.dataset.title = cell.title;
+    onLongPress(cell, () => { if (!cell.classList.contains('peek')) app.toggleSecond(el.z); });
     pt.append(cell);
   }
   if (ELEMENTS.some(el => el.group == null)) {
@@ -78,6 +75,7 @@ export function buildUI(app) {
   }
   const toggle = h('button', { id: 'ptable-toggle', onclick: () => app.setTableCollapsed(!app.tableCollapsed) });
   pt.append(toggle);
+  pt.append(h('div', { id: 'pick-hint', class: 'pick-hint', hidden: '' }, 'Tap an element to compare'));
 
   // ---------------------------------------------------- controls
   const exposure = $('#exposure');
@@ -104,6 +102,7 @@ export function buildUI(app) {
   $('#show-valence').addEventListener('click', () => app.showValence());
   $('#radial-shells').addEventListener('click', () => app.setRadialMode('shell'));
   $('#radial-subshells').addEventListener('click', () => app.setRadialMode('subshell'));
+  $('#radial-compare').addEventListener('click', () => app.setRadialMode('compare'));
 
   window.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT') return;
@@ -112,8 +111,26 @@ export function buildUI(app) {
     else if (e.key === ' ') { e.preventDefault(); app.setPaused(!app.state.paused); }
     else if (e.key === 'r') app.resetView();
     else if (e.key === 's') app.savePng();
-    else if (e.key === 'Escape') app.clearSecond();
+    else if (e.key === 'Escape') { if (app.pickingSecond) app.togglePicking(); else app.clearSecond(); }
   });
+}
+
+// Long-press (touch: the equivalent of shift-click). Fires after `ms` unless
+// the pointer lifts or moves > 10 px first; the click that follows is
+// swallowed by the cell's click handler, and the browser's long-press menu
+// is suppressed.
+function onLongPress(el, fn, ms = 500) {
+  let timer = null, x0 = 0, y0 = 0;
+  const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+  el.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    delete el.dataset.longpressed;
+    x0 = e.clientX; y0 = e.clientY;
+    timer = setTimeout(() => { timer = null; el.dataset.longpressed = '1'; fn(); }, ms);
+  });
+  el.addEventListener('pointermove', e => { if (timer && Math.hypot(e.clientX - x0, e.clientY - y0) > 10) cancel(); });
+  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) el.addEventListener(ev, cancel);
+  el.addEventListener('contextmenu', e => e.preventDefault());
 }
 
 // Exposure slider is logarithmic: value in [0, 100] -> density in [0.01, 3].
@@ -142,148 +159,230 @@ export function syncControls(state) {
 }
 
 export function updateTable(app) {
-  const el = app.state.element;
-  const current = el.group == null ? 8 : el.period;
+  const atoms = atomsOf(app.state);
+  const [A, B] = atoms;
   const cells = [...document.querySelectorAll('#ptable .pt-cell')];
-  // Collapsed: the current row in full, plus thin "peek" slivers of the rows
-  // directly above and below (in table order: periods, then the f-block row)
-  // hinting that there is a whole table to expand.
-  const rows = [...new Set(cells.map(c => +c.dataset.row))].sort((a, b) => a - b);
-  const at = rows.indexOf(current);
-  const above = rows[at - 1], below = rows[at + 1];
+  // Collapsed: the rows of the selected atoms in full, plus thin "peek"
+  // slivers of their neighbouring rows (in table order: periods, then the
+  // f-block row), hinting that there is a whole table to expand.
+  const layout = app.tableCollapsed
+    ? new Map(collapsedRows(cells.map(c => +c.dataset.row), atoms.map(tableRow)).map(r => [r.row, r]))
+    : null;
   for (const c of cells) {
-    c.classList.toggle('active', +c.dataset.z === el.z);
-    c.classList.toggle('second', !!app.state.second && +c.dataset.z === app.state.second.z);
+    const z = +c.dataset.z;
+    c.classList.toggle('active', z === A.z);
+    c.classList.toggle('second', !!B && z === B.z);
+    if (B && (z === A.z || z === B.z)) c.dataset.badge = z === A.z ? 'A' : 'B';
+    else delete c.dataset.badge;
     const row = +c.dataset.row;
-    const peek = app.tableCollapsed && (row === above || row === below);
+    const info = layout?.get(row);
+    const peek = !!info?.peek;
     c.classList.toggle('peek', peek);
-    c.hidden = app.tableCollapsed && row !== current && !peek;
+    c.hidden = !!layout && !info;
     if (c.tagName === 'BUTTON') c.tabIndex = peek ? -1 : 0;
     if (peek) c.title = 'Show the whole periodic table';
     else if (c.dataset.title) c.title = c.dataset.title;
     c.style.gridColumn = c.dataset.col;
-    c.style.gridRow = !app.tableCollapsed ? row : row === above ? 1 : row === current ? 2 : 3;
+    c.style.gridRow = layout ? (info ? info.gridRow : 1) : row;
   }
   const t = $('#ptable-toggle');
   t.textContent = app.tableCollapsed ? '▾' : '▴';
   t.title = app.tableCollapsed ? 'Show the whole periodic table' : 'Collapse to the current row';
   t.setAttribute('aria-expanded', String(!app.tableCollapsed));
   $('#ptable').classList.toggle('collapsed', app.tableCollapsed);
+  $('#ptable').classList.toggle('picking', !!app.pickingSecond);
+  $('#pick-hint').hidden = !app.pickingSecond;
 }
 
 export function updateElement(app) {
   const { state } = app;
-  const el = state.element;
+  const atoms = atomsOf(state);
+  const [A, B] = atoms;
   updateTable(app);
+  renderCard(app, A, B);
+  renderLegend(app, atoms);
+  renderNotes(atoms);
+}
 
-  const tile = h('canvas', { class: 'card-symbol', role: 'img',
-    'aria-label': `${el.name}, atomic number ${el.z}, mass ${el.mass}` });
-  renderTileCanvas(tile, el);
-  $('#element-card').replaceChildren(
-    tile,
-    h('div', { class: 'card-info' },
-      h('div', { class: 'card-name-row' },
-        h('div', { class: 'card-name' }, el.name),
-        h('span', { class: 'stepper' },
-          stepButton('‹', 'Previous element (←)', stepElement(el.z, -1), app),
-          stepButton('›', 'Next element (→)', stepElement(el.z, +1), app))),
-      h('div', { class: 'card-cat' }, el.category),
-      infoRow('Configuration', el.configShort, el.config),
-      infoRow('Period / Group', `${el.period} / ${el.group ?? 'f-block'}`),
-      infoRow('Electronegativity', el.electronegativity == null ? '—' : el.electronegativity.toFixed(2)),
-      infoRow('1st ionization', `${el.ionizationEnergy.toFixed(3)} eV`)),
+// ------------------------------------------------------------ element card
+// One atom: the tile and its data, with prev/next and Compare (⇄) buttons.
+// Two atoms: both tiles (A, B) with swap / remove, and a two-column table.
+function renderCard(app, A, B) {
+  const card = $('#element-card');
+  card.classList.toggle('cmp', !!B);
+  const steppers = [
+    stepButton('‹', 'Previous element (←)', stepElement(A.z, -1), app),
+    stepButton('›', 'Next element (→)', stepElement(A.z, +1), app),
+  ];
+  if (!B) {
+    const cmp = h('button', { class: 'step' + (app.pickingSecond ? ' on' : ''),
+      title: 'Compare with another element: then tap it in the periodic table ' +
+        '(or shift-click / long-press an element)', 'aria-pressed': String(!!app.pickingSecond),
+      onclick: () => app.togglePicking() }, '⇄');
+    card.replaceChildren(
+      tileCanvas(A),
+      h('div', { class: 'card-info' },
+        h('div', { class: 'card-name-row' },
+          h('div', { class: 'card-name' }, A.name),
+          h('span', { class: 'stepper' }, ...steppers, cmp)),
+        h('div', { class: 'card-cat' }, A.category),
+        infoRow('Configuration', A.configShort, A.config),
+        infoRow('Period / Group', periodGroup(A)),
+        infoRow('Electronegativity', en(A)),
+        infoRow('1st ionization', `${A.ionizationEnergy.toFixed(3)} eV`)),
+    );
+    return;
+  }
+  const side = (el, badge) => h('div', { class: 'cmp-atom' },
+    h('span', { class: 'badge' }, badge), tileCanvas(el, 0.6),
+    h('div', { class: 'cmp-name' }, el.name), h('div', { class: 'card-cat' }, el.category));
+  const row = (k, a, b, titleA, titleB) => h('tr', {},
+    h('th', {}, k), h('td', { title: titleA || '' }, a), h('td', { title: titleB || '' }, b));
+  card.replaceChildren(
+    h('div', { class: 'cmp-head' },
+      side(A, 'A'), side(B, 'B'),
+      h('span', { class: 'stepper cmp-actions' }, ...steppers,
+        h('button', { class: 'step', title: 'Swap A and B', onclick: () => app.swapAtoms() }, '⇆'),
+        h('button', { class: 'step', title: 'Stop comparing (Esc)', onclick: () => app.clearSecond() }, '×'))),
+    h('table', { class: 'cmp-table' },
+      h('thead', {}, h('tr', {}, h('th', {}), h('th', {}, `A · ${A.symbol}`), h('th', {}, `B · ${B.symbol}`))),
+      h('tbody', {},
+        row('Configuration', A.configShort, B.configShort, A.config, B.config),
+        row('Period / Group', periodGroup(A), periodGroup(B)),
+        row('Electronegativity', en(A), en(B)),
+        row('1st ionization', `${A.ionizationEnergy.toFixed(3)} eV`, `${B.ionizationEnergy.toFixed(3)} eV`))),
   );
+}
 
-  // Subshells of every period up to this element's (at least 2), grouped by
-  // shell (n). Shell rows collapse; p/d/f rows expand to single orbitals.
-  const maxPeriod = Math.max(2, el.period);
+function tileCanvas(el, scale = 1) {
+  const c = h('canvas', { class: 'card-symbol', role: 'img',
+    'aria-label': `${el.name}, atomic number ${el.z}, mass ${el.mass}` });
+  renderTileCanvas(c, el, scale);
+  return c;
+}
+const periodGroup = el => `${el.period} / ${el.group ?? 'f-block'}`;
+const en = el => (el.electronegativity == null ? '—' : el.electronegativity.toFixed(2));
+
+// ------------------------------------------------------------ orbital legend
+// The union of the selected atoms' subshells, grouped by shell (n). Shell
+// rows collapse; p/d/f rows expand to single orbitals. Visibility is shared:
+// hiding an orbital hides it in every pane. With two atoms the numeric
+// columns are per atom (electrons and r_rms for A and for B).
+function renderLegend(app, atoms) {
+  const { state } = app;
+  const cmp = atoms.length > 1;
+  const [A, B] = atoms;
+  $('#legend thead').replaceChildren(cmp
+    ? h('tr', {}, h('th', {}), h('th', {}), h('th', {}, 'Subshell'),
+      h('th', { class: 'num' }, `e⁻ ${A.symbol}`), h('th', { class: 'num' }, `e⁻ ${B.symbol}`),
+      h('th', { class: 'num', html: `r<sub>rms</sub> ${A.symbol}` }), h('th', { class: 'num', html: `r<sub>rms</sub> ${B.symbol}` }))
+    : h('tr', {}, h('th', {}), h('th', {}), h('th', {}, 'Subshell'), h('th', {}, 'e⁻'),
+      h('th', { class: 'num', html: 'Z<sub>eff</sub>' }),
+      h('th', { class: 'num', title: 'RMS radius √⟨r²⟩', html: 'r<sub>rms</sub> pm' })));
+
+  const occOf = (el, idx) => idx.reduce((a, i) => a + el.occupancy[i], 0);
+  const rmsPm = (el, sh) => {
+    const z = el.zeffBySubshell[sh.id];
+    return el.subshells[sh.id] ? (Math.sqrt(meanR2(sh.n, sh.l, z)) * BOHR_PM).toFixed(0) : '';
+  };
+  // Swatch colour (depth-based chroma) from the first atom that has it.
+  const owner = i => atoms.find(el => el.occupancy[i] > 0) || A;
+  const checkbox = (title, idx, onChange) => {
+    const occupied = idx.filter(i => occupiedAny(atoms, i));
+    const vis = occupied.filter(i => state.visible[i]).length;
+    const cb = h('input', { type: 'checkbox', title });
+    cb.checked = occupied.length > 0 && vis === occupied.length;
+    cb.indeterminate = vis > 0 && vis < occupied.length;
+    cb.disabled = occupied.length === 0;
+    cb.addEventListener('change', () => onChange(cb.checked));
+    return cb;
+  };
+
   const rows = [];
-  const shown = SUBSHELLS.filter(x => x.period <= maxPeriod);
+  const shown = SUBSHELLS.filter(x => x.period <= Math.max(2, maxPeriod(atoms)));
   for (const n of [...new Set(shown.map(x => x.n))].sort((a, b) => a - b)) {
     const shells = shown.filter(x => x.n === n);
     const idxAll = shells.flatMap(sh => orbitalsOf(sh.id));
-    const occN = idxAll.reduce((a, i) => a + el.occupancy[i], 0);
-    const visN = idxAll.filter(i => state.visible[i] && el.occupancy[i] > 0).length;
-    const occupiedN = idxAll.filter(i => el.occupancy[i] > 0).length;
+    const totals = atoms.map(el => occOf(el, idxAll));
+    const any = totals.some(t => t > 0);
     const openShell = app.expandedShells.has(n);
-
-    const scb = h('input', { type: 'checkbox', title: `Show / hide shell n = ${n}` });
-    scb.checked = occupiedN > 0 && visN === occupiedN;
-    scb.indeterminate = visN > 0 && visN < occupiedN;
-    scb.disabled = occN === 0;
-    scb.addEventListener('change', () => app.setVisibleMany(idxAll, scb.checked));
-    rows.push(h('tr', { class: 'shell' + (occN ? '' : ' empty') },
-      h('td', {}, scb),
-      h('td', { class: 'orb-label', colspan: '2' },
-        h('button', { class: 'caret', title: openShell ? 'Collapse shell' : 'Show subshells',
-          'aria-expanded': String(openShell), onclick: () => app.toggleShell(n) }, openShell ? '▾' : '▸'),
-        `n = ${n}`, h('span', { class: 'shell-letter' }, ` ${SHELL_LETTER[n]}`)),
-      h('td', { class: 'num' }, occN ? String(occN) : '—'),
-      h('td', {}), h('td', {})));
+    const scb = checkbox(`Show / hide shell n = ${n}`, idxAll, on => app.setVisibleMany(idxAll, on));
+    const label = h('td', { class: 'orb-label', colspan: '2' },
+      h('button', { class: 'caret', title: openShell ? 'Collapse shell' : 'Show subshells',
+        'aria-expanded': String(openShell), onclick: () => app.toggleShell(n) }, openShell ? '▾' : '▸'),
+      `n = ${n}`, h('span', { class: 'shell-letter' }, ` ${SHELL_LETTER[n]}`));
+    rows.push(h('tr', { class: 'shell' + (any ? '' : ' empty') },
+      h('td', {}, scb), label,
+      ...(cmp
+        ? [h('td', { class: 'num' }, totals[0] ? String(totals[0]) : '—'),
+          h('td', { class: 'num' }, totals[1] ? String(totals[1]) : '—'), h('td', {}), h('td', {})]
+        : [h('td', { class: 'num' }, totals[0] ? String(totals[0]) : '—'), h('td', {}), h('td', {})])));
     if (!openShell) continue;
 
     for (const sh of shells) {
       const idx = orbitalsOf(sh.id);
-      const occ = idx.reduce((a, i) => a + el.occupancy[i], 0);
-      const z = el.zeffBySubshell[sh.id];
-      const r = occ ? Math.sqrt(meanR2(sh.n, sh.l, z)) : null;
-      const vis = idx.filter(i => state.visible[i]).length;
-
-      const cb = h('input', { type: 'checkbox', title: 'Show / hide this subshell' });
-      cb.checked = vis === idx.length;
-      cb.indeterminate = vis > 0 && vis < idx.length;
-      cb.disabled = occ === 0;
-      cb.addEventListener('change', () => app.setVisibleMany(idx, cb.checked));
-
-      const expandable = sh.l > 0 && occ > 0;
+      const occs = atoms.map(el => occOf(el, idx));
+      const any = occs.some(o => o > 0);
+      const cb = checkbox('Show / hide this subshell', idx, on => app.setVisibleMany(idx, on));
+      const expandable = sh.l > 0 && any;
       const open = expandable && app.expanded.has(sh.id);
       const caret = expandable
         ? h('button', { class: 'caret', title: open ? 'Collapse' : 'Show individual orbitals',
             'aria-expanded': String(open), onclick: () => app.toggleExpanded(sh.id) }, open ? '▾' : '▸')
         : h('span', { class: 'caret' });
-
-      rows.push(h('tr', { class: 'sub' + (occ ? '' : ' empty') },
+      const cap = CAPACITY[sh.l];
+      const numbers = cmp
+        ? [h('td', { class: 'num' }, occs[0] ? String(occs[0]) : '—'),
+          h('td', { class: 'num' }, occs[1] ? String(occs[1]) : '—'),
+          h('td', { class: 'num' }, rmsPm(A, sh)), h('td', { class: 'num' }, rmsPm(B, sh))]
+        : [h('td', { class: 'num' }, occs[0] ? `${occs[0]}/${cap}` : '—'),
+          h('td', { class: 'num' }, occs[0] ? A.zeffBySubshell[sh.id].toFixed(3) : ''),
+          h('td', { class: 'num' }, rmsPm(A, sh))];
+      rows.push(h('tr', { class: 'sub' + (any ? '' : ' empty') },
         h('td', {}, cb),
         h('td', { class: 'swatches' }, ...idx.map(i =>
-          h('span', { class: 'swatch', style: `background:${orbitalCss(ORBITALS[i], el)}` }))),
-        h('td', { class: 'orb-label' }, caret, sh.id),
-        h('td', { class: 'num' }, occ ? `${occ}/${CAPACITY[sh.l]}` : '—'),
-        h('td', { class: 'num' }, occ ? z.toFixed(3) : ''),
-        h('td', { class: 'num' }, occ ? (r * BOHR_PM).toFixed(0) : '')));
+          h('span', { class: 'swatch', style: `background:${orbitalCss(ORBITALS[i], owner(i))}` }))),
+        h('td', { class: 'orb-label' }, caret, sh.id), ...numbers));
 
       if (open) {
         for (const i of idx) {
           const o = ORBITALS[i];
-          const k = el.occupancy[i];
-          const ocb = h('input', { type: 'checkbox', title: 'Show / hide this orbital' });
-          ocb.checked = state.visible[i];
-          ocb.disabled = k === 0;
-          ocb.addEventListener('change', () => app.setVisible(i, ocb.checked));
-          rows.push(h('tr', { class: 'child' + (k ? '' : ' empty') },
+          const pips = el => (el.occupancy[i] === 0 ? '—' : (el.occupancy[i] === 2 ? '↑↓' : '↑'));
+          const ocb = checkbox('Show / hide this orbital', [i], on => app.setVisible(i, on));
+          rows.push(h('tr', { class: 'child' + (occupiedAny(atoms, i) ? '' : ' empty') },
             h('td', {}, ocb),
-            h('td', { class: 'swatches' }, h('span', { class: 'swatch', style: `background:${orbitalCss(o, el)}` })),
+            h('td', { class: 'swatches' }, h('span', { class: 'swatch', style: `background:${orbitalCss(o, owner(i))}` })),
             h('td', { class: 'orb-label', html: o.label }),
-            h('td', { class: 'pips' }, k === 0 ? '—' : (k === 2 ? '↑↓' : '↑')),
-            h('td', {}), h('td', {})));
+            ...(cmp
+              ? [h('td', { class: 'pips num' }, pips(A)), h('td', { class: 'pips num' }, pips(B)), h('td', {}), h('td', {})]
+              : [h('td', { class: 'pips' }, pips(A)), h('td', {}), h('td', {})])));
         }
       }
     }
   }
   $('#legend tbody').replaceChildren(...rows);
+}
 
-  // Partly filled p/d subshells: which orbitals hold the electrons is one of
-  // several equivalent (degenerate) choices; say which convention is shown.
-  const partial = SUBSHELLS.filter(sh => sh.l > 0 &&
-    (el.subshells[sh.id] || 0) > 0 && el.subshells[sh.id] < CAPACITY[sh.l]);
+// Partly filled p/d/f subshells: which orbitals hold the electrons is one of
+// several equivalent (degenerate) choices; say which convention is shown.
+function renderNotes(atoms) {
   const HUND_ORDER = { 1: 'p: x, y, z', 2: 'd: xy, yz, xz, x²−y², z²',
     3: 'f: z³, xz², yz², xyz, z(x²−y²), x(x²−3y²), y(3x²−y²)' };
   const notes = [];
+  const partial = [];
+  for (const el of atoms) {
+    for (const sh of SUBSHELLS) {
+      const c = el.subshells[sh.id] || 0;
+      if (sh.l > 0 && c > 0 && c < CAPACITY[sh.l]) partial.push({ el, sh });
+    }
+  }
   if (partial.length) {
-    const order = [...new Set(partial.map(sh => HUND_ORDER[sh.l]))].join('; ');
-    notes.push(`Partly filled ${partial.map(sh => sh.id).join(', ')}: shown is one of several ` +
+    const names = partial.map(({ el, sh }) => (atoms.length > 1 ? `${el.symbol} ${sh.id}` : sh.id));
+    const order = [...new Set(partial.map(({ sh }) => HUND_ORDER[sh.l]))].join('; ');
+    notes.push(`Partly filled ${names.join(', ')}: shown is one of several ` +
       `equivalent fillings (Hund's rule in the order ${order}).`);
   }
-  if (el.z >= 55) {
+  if (atoms.some(el => el.z >= 55)) {
     notes.push('Non-relativistic hydrogen-like model: relativistic contraction / expansion of ' +
       'heavy-atom orbitals (e.g. 6s, 5d) is not included.');
   }
@@ -351,7 +450,7 @@ export function drawOverlay(canvas, state, views) {
   views.forEach(({ element, geo }, i) => {
     const r = geo.rect;
     drawPane(ctx, state, element, geo, { left: r.x, top: hgt - r.y - r.h, w: r.w, h: r.h },
-      { dpr, fg, halo, hw, scaleBar: i === views.length - 1 });
+      { dpr, fg, halo, hw, scaleBar: i === views.length - 1, badge: views.length > 1 ? 'AB'[i] : null });
   });
 
   // Divider between two panes.
@@ -390,7 +489,7 @@ export function drawOverlay(canvas, state, views) {
 
 // One pane: horizon ring, scale bar and element tile within `box`
 // (device px, top-left origin).
-function drawPane(ctx, state, el, geo, box, { dpr, fg, halo, hw, scaleBar = true }) {
+function drawPane(ctx, state, el, geo, box, { dpr, fg, halo, hw, scaleBar = true, badge = null }) {
   const pxPerBohr = box.h / (2 * geo.halfExtent[1]);
   const cx = box.left + box.w / 2, cy = box.top + box.h / 2;
   // Compact overlay on narrow panes (phones in portrait, split views).
@@ -416,7 +515,7 @@ function drawPane(ctx, state, el, geo, box, { dpr, fg, halo, hw, scaleBar = true
 
   // Scale bar: 1 Å, or 1 a0 if that is too long; bottom-right of the pane.
   if (scaleBar) drawScaleBar(ctx, box, pxPerBohr, k, { dpr, fg, halo, hw });
-  drawPaneLabel(ctx, state, el, box, k, kt, { dpr, fg, halo, hw });
+  drawPaneLabel(ctx, state, el, box, k, kt, { dpr, fg, halo, hw, badge });
 }
 
 function drawScaleBar(ctx, box, pxPerBohr, k, { dpr, fg, halo, hw }) {
@@ -437,9 +536,21 @@ function drawScaleBar(ctx, box, pxPerBohr, k, { dpr, fg, halo, hw }) {
 
 // Element tile (same rendering as the side-panel card) with name, category
 // and configuration beside it, top-left of the pane.
-function drawPaneLabel(ctx, state, el, box, k, kt, { dpr, fg, halo, hw }) {
+function drawPaneLabel(ctx, state, el, box, k, kt, { dpr, fg, halo, hw, badge }) {
   const tx = box.left + 16 * k * dpr, ty = box.top + 16 * k * dpr;
   drawElementTile(ctx, el, tx, ty, k * dpr);
+  if (badge) {                              // A / B, matching the periodic table
+    const r = 9 * k * dpr, bx = tx + TILE_W * k * dpr, by = ty;
+    ctx.beginPath();
+    ctx.arc(bx, by, r, 0, 2 * Math.PI);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+    ctx.fillStyle = '#111';
+    ctx.font = `700 ${11 * k * dpr}px system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(badge, bx, by + 0.5 * dpr);
+  }
   const lx = tx + (TILE_W * k + 10) * dpr;
   ctx.fillStyle = state.mode === 'white' ? 'rgba(0,0,0,0.8)' : 'rgba(255,255,255,0.85)';
   ctx.textAlign = 'left';

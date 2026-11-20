@@ -27,9 +27,16 @@ export const SHELL_SERIES = [...new Set(SUBSHELLS.map(sh => sh.n))].sort((a, b) 
 // 'shell' | 'subshell' for this element: explicit choice, or shells when
 // more than 8 subshells are occupied.
 export function radialMode(state, el) {
+  if (state.second && (state.radialMode === 'compare' || state.radialMode === 'auto')) return 'compare';
   if (state.radialMode === 'shell' || state.radialMode === 'subshell') return state.radialMode;
   return Object.keys(el.subshells).length > 8 ? 'shell' : 'subshell';
 }
+
+// A vs B: each atom's total radial density, A solid and B dashed, in two
+// colours validated as a pair on the dark panel (also the n=3 / n=2 shell
+// colours).
+const COMPARE_COLORS = ['#0f91bd', '#b88b05'];
+const COMPARE_DASH = [[], [6, 3]];
 
 // Small inline line sample for legends/tooltips (same colour + dash as the plot).
 function lineSample(color, dash = []) {
@@ -76,11 +83,11 @@ export function createRadialPlot(canvas, tooltip, legendEl) {
   let model = null;   // last drawn data, for hover
 
   let legendFor = null;
-  function updateLegend(active) {
-    const key = active.map(s => s.key).join();
+  function updateLegend(active, showTotal) {
+    const key = active.map(s => s.key + s.label).join() + showTotal;
     if (key === legendFor) return;
     legendFor = key;
-    const items = active.length > 1 ? [...active, { label: 'total', color: INK.total }] : active;
+    const items = showTotal ? [...active, { label: 'total', color: INK.total }] : active;
     legendEl.replaceChildren(...items.map(s => {
       const item = document.createElement('span');
       item.className = 'rl-item';
@@ -102,9 +109,12 @@ export function createRadialPlot(canvas, tooltip, legendEl) {
     const rMax = geo.halfExtent[1];                       // Bohr, matches view
     // Fixed scale: share the y range across the element's period so e.g. He
     // vs H heights compare directly. Auto: fit this element.
+    const mode = radialMode(state, el);
+    const atoms = mode === 'compare' ? [el, state.second] : [el];
     const yMax = 1.08 * (state.fixedScale
-      ? Math.max(...ELEMENTS.filter(e => e.period === el.period && e.supported).map(e => peakOver(e, rMax)))
-      : peakOver(el, rMax));
+      ? Math.max(...ELEMENTS.filter(e => atoms.some(a => a.period === e.period) && e.supported)
+        .map(e => peakOver(e, rMax)))
+      : Math.max(...atoms.map(a => peakOver(a, rMax))));
     const pw = cw - M.l - M.r, ph = ch - M.t - M.b;
     const X = r => M.l + (r / rMax) * pw;
     const Y = v => M.t + ph - (v / yMax) * ph;
@@ -156,12 +166,18 @@ export function createRadialPlot(canvas, tooltip, legendEl) {
       rs.forEach((r, i) => { const y = Y(Math.min(fn(r), yMax * 1.2)); i ? ctx.lineTo(X(r), y) : ctx.moveTo(X(r), y); });
       ctx.stroke();
     };
-    const active = occupiedSeries(radialMode(state, el) === 'shell' ? SHELL_SERIES : SERIES, el);
-    updateLegend(active);
+    // Plotted series, each with its own density function r -> e- per a0.
+    const active = mode === 'compare'
+      ? atoms.map((a, i) => ({ key: `atom${i}`, label: a.symbol, color: COMPARE_COLORS[i],
+          dash: COMPARE_DASH[i], f: r => totalDensity(a, r) }))
+      : occupiedSeries(mode === 'shell' ? SHELL_SERIES : SERIES, el)
+          .map(sr => ({ ...sr, f: r => seriesDensity(el, sr, r) }));
+    const showTotal = mode !== 'compare' && active.length > 1;
+    updateLegend(active, showTotal);
     ctx.save();
     ctx.beginPath(); ctx.rect(M.l, M.t - 2, pw, ph + 4); ctx.clip();
-    if (active.length > 1) curve(r => totalDensity(el, r), INK.total, 1.25);
-    for (const s of active) curve(r => seriesDensity(el, s, r), s.color, 2, s.dash);
+    if (showTotal) curve(r => totalDensity(el, r), INK.total, 1.25);
+    for (const s of active) curve(s.f, s.color, 2, s.dash);
     ctx.setLineDash([]);
     ctx.restore();
 
@@ -172,7 +188,7 @@ export function createRadialPlot(canvas, tooltip, legendEl) {
     const placed = [];
     for (const s of active) {
       let best = 0, br = 0;
-      for (const r of rs) { const v = seriesDensity(el, s, r); if (v > best) { best = v; br = r; } }
+      for (const r of rs) { const v = s.f(r); if (v > best) { best = v; br = r; } }
       const lx = X(br) + 4, ly = Math.max(M.t + 12, Y(best) - 2);
       if (placed.some(p => Math.abs(p[0] - lx) < 22 && Math.abs(p[1] - ly) < 12)) continue;
       placed.push([lx, ly]);
@@ -181,7 +197,7 @@ export function createRadialPlot(canvas, tooltip, legendEl) {
     }
 
     // hover crosshair
-    model = { state, geo, rMax, X, Y, pw, ph, active };
+    model = { state, geo, rMax, X, Y, pw, ph, active, showTotal };
     if (hoverX != null && hoverX >= M.l && hoverX <= M.l + pw) {
       const r = ((hoverX - M.l) / pw) * rMax;
       ctx.strokeStyle = INK.muted;
@@ -189,14 +205,14 @@ export function createRadialPlot(canvas, tooltip, legendEl) {
       ctx.beginPath(); ctx.moveTo(hoverX + 0.5, M.t); ctx.lineTo(hoverX + 0.5, M.t + ph); ctx.stroke();
       const rows = [];
       for (const s of active) {
-        const v = seriesDensity(el, s, r);
+        const v = s.f(r);
         ctx.fillStyle = s.color;
         ctx.strokeStyle = '#151922';
         ctx.lineWidth = 2;
         ctx.beginPath(); ctx.arc(X(r), Y(Math.min(v, yMax)), 4, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
         rows.push(`<div>${lineSample(s.color, s.dash)}${s.label}<b>${v.toFixed(3)}</b></div>`);
       }
-      if (active.length > 1) rows.push(`<div>${lineSample(INK.total)}total<b>${totalDensity(el, r).toFixed(3)}</b></div>`);
+      if (showTotal) rows.push(`<div>${lineSample(INK.total)}total<b>${totalDensity(el, r).toFixed(3)}</b></div>`);
       tooltip.innerHTML = `<div class="tt-head">r = ${(r * BOHR_PM).toFixed(0)} pm · e⁻/a₀</div>` + rows.join('');
       tooltip.hidden = false;
       const left = hoverX + 12 + tooltip.offsetWidth > cw ? hoverX - 12 - tooltip.offsetWidth : hoverX + 12;

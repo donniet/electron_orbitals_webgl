@@ -49,13 +49,13 @@ export function drawElementTile(ctx, el, x, y, scale = 1) {
 }
 
 /** Size `canvas` for the device pixel ratio and draw the tile into it. */
-export function renderTileCanvas(canvas, el) {
+export function renderTileCanvas(canvas, el, scale = 1) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  canvas.width = Math.round(TILE_W * dpr);
-  canvas.height = Math.round(TILE_H * dpr);
-  canvas.style.width = `${TILE_W}px`;
-  canvas.style.height = `${TILE_H}px`;
+  canvas.width = Math.round(TILE_W * scale * dpr);
+  canvas.height = Math.round(TILE_H * scale * dpr);
+  canvas.style.width = `${TILE_W * scale}px`;
+  canvas.style.height = `${TILE_H * scale}px`;
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  drawElementTile(ctx, el, 0, 0, dpr);
+  drawElementTile(ctx, el, 0, 0, scale * dpr);
 }
