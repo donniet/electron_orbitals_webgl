@@ -6,6 +6,9 @@
 #ifndef NUM_ORBITALS
 #error NUM_ORBITALS must be defined by the host (createProgram defines)
 #endif
+
+#define TWO_PI (6.28318530718)
+
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -189,12 +192,12 @@ void main() {
     float lambda = orb.x * col * orb.w;
     int k = poisson(lambda, key, uint(i));      // stream = orbital slot (< 64)
     float sat = k > 0 ? min(1.0, pow(float(k) / uKMax, uGamma)) : 0.0;
-    float h = orb.z * 6.28318530718;
+    float h = orb.z * TWO_PI;
     chroma += sat * o.kind.z * vec2(cos(h), sin(h));
     total += sat;
   }
 
-  float hue = fract(atan(chroma.y, chroma.x) / 6.28318530718 + 1.0);
+  float hue = fract(atan(chroma.y, chroma.x) / TWO_PI + 1.0);
   float purity = total > 0.0 ? length(chroma) / total : 0.0;
   float amount = min(total, 1.0);
 
