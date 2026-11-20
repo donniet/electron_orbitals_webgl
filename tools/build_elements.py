@@ -15,6 +15,10 @@ Sources (in data/sources/):
 * Elements whose ground-state configuration has a subshell without a
   Clementi value (La, Ce, Gd: 5d) are written with "supported": false and
   a reason; the app greys them out.
+* rahm_radius.csv -- Rahm atomic radii (pm): the radius at which the free
+  atom's electron density falls to 0.001 e/bohr^3. Rahm, Hoffmann &
+  Ashcroft, Chem. Eur. J. 22, 14625 (2016), corrigendum 23, 4017 (2017),
+  as tabulated in the mendeleev package (atomic_radius_rahm).
 * overrides.json -- reviewed values that take precedence over PubChem
   (atomic weights, electronegativities and ionization energies for Z <= 36
   that the app used before this data pipeline; PubChem rounds several
@@ -36,6 +40,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "data", "sources")
 PUBCHEM = os.path.join(SRC, "pubchem_periodictable.json")
 ZEFF_CSV = os.path.join(SRC, "clementi_zeff.csv")
+RADIUS_CSV = os.path.join(SRC, "rahm_radius.csv")
 OVERRIDES = os.path.join(SRC, "overrides.json")
 OUT = os.path.join(ROOT, "data", "elements.json")
 
@@ -108,6 +113,12 @@ def load_zeff():
     return z
 
 
+def load_radius():
+    with open(RADIUS_CSV) as fh:
+        return {int(r["Z"]): float(r["radius_pm"])
+                for r in csv.DictReader(line for line in fh if not line.startswith("#"))}
+
+
 def num(s):
     return float(s) if s not in ("", None) else None
 
@@ -115,6 +126,7 @@ def num(s):
 def build():
     pub = load_pubchem()
     zeff = load_zeff()
+    radius = load_radius()
     over = json.load(open(OVERRIDES))["elements"]
     out, notes = [], []
     for z in range(1, MAX_Z + 1):
@@ -144,6 +156,9 @@ def build():
                      for k in sorted(sub, key=lambda k: (k[0], "spdf".index(k[1])))
                      if k in zeff.get(z, {})},
             "supported": not missing,
+            # Rahm atomic radius (pm): where the free atom's electron density
+            # falls to 0.001 e/bohr^3.
+            "atomicRadius": radius[z],
         }
         if missing:
             rec["unsupportedReason"] = (
@@ -169,6 +184,9 @@ def write(elements):
             "zeff": "Clementi & Raimondi, J. Chem. Phys. 38, 2686 (1963); Clementi, Raimondi & Reinhardt, "
                     "J. Chem. Phys. 47, 1300 (1967); via the mendeleev package database",
             "overrides": "data/sources/overrides.json (reviewed values for Z <= 36)",
+            "atomicRadius": "Rahm, Hoffmann & Ashcroft, Chem. Eur. J. 22, 14625 (2016), corrigendum "
+                            "23, 4017 (2017): radius where the free-atom electron density falls to "
+                            "0.001 e/bohr^3; via the mendeleev package database (atomic_radius_rahm)",
         },
         "elements": elements,
     }
@@ -191,12 +209,24 @@ def extract_mendeleev(db_path):
         for z, n, s, sigma in rows:
             w.writerow([z, f"{n}{s}", f"{z - sigma:.4f}"])
     print(f"Wrote {ZEFF_CSV} ({len(rows)} rows)")
+    rad = con.execute(
+        "select atomic_number, atomic_radius_rahm from elements "
+        "where atomic_number <= ? order by atomic_number", (MAX_Z,)).fetchall()
+    with open(RADIUS_CSV, "w", newline="") as fh:
+        fh.write("# Rahm atomic radius (pm): radius where the free-atom electron density falls to\n")
+        fh.write("# 0.001 e/bohr^3. Rahm, Hoffmann & Ashcroft, Chem. Eur. J. 22, 14625 (2016);\n")
+        fh.write("# corrigendum 23, 4017 (2017). From the mendeleev package (atomic_radius_rahm).\n")
+        w = csv.writer(fh)
+        w.writerow(["Z", "radius_pm"])
+        for z, r in rad:
+            w.writerow([z, f"{r:.0f}"])
+    print(f"Wrote {RADIUS_CSV} ({len(rad)} rows)")
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--from-mendeleev-db", metavar="PATH",
-                    help="regenerate data/sources/clementi_zeff.csv from mendeleev's elements.db")
+                    help="regenerate data/sources/clementi_zeff.csv and rahm_radius.csv from mendeleev's elements.db")
     args = ap.parse_args(argv)
     if args.from_mendeleev_db:
         extract_mendeleev(args.from_mendeleev_db)

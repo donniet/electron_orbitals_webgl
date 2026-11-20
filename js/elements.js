@@ -100,6 +100,7 @@ function fromJson(d) {
     occupancy: orbitalOccupancy(d.subshells),                 // per ORBITALS index
     zeff: ORBITALS.map(o => d.zeff[o.subshell] ?? 0),         // per ORBITALS index
     zeffBySubshell: d.zeff,
+    atomicRadius: d.atomicRadius,                             // pm (Rahm et al. 2016)
     config: electronConfig(d.subshells),
     configShort: shortConfig(d.z, d.subshells),
   };

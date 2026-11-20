@@ -139,21 +139,23 @@ export function createRadialPlot(canvas, tooltip, legendEl) {
       ctx.fillText(String(Math.round(pm)), X(pm / BOHR_PM), M.t + ph + 4);
     }
 
-    // horizon marker
-    const hx = X(geo.horizon);
-    if (geo.horizon <= rMax) {
+    // Atomic-radius marker(s): Rahm et al. radius of each plotted atom.
+    atoms.forEach((a, i) => {
+      const rr = a.atomicRadius / BOHR_PM;
+      if (!(rr <= rMax)) return;
+      const hx = X(rr);
       ctx.strokeStyle = INK.muted;
       ctx.setLineDash([3, 3]);
       ctx.beginPath(); ctx.moveTo(hx + 0.5, M.t); ctx.lineTo(hx + 0.5, M.t + ph); ctx.stroke();
       ctx.setLineDash([]);
       ctx.fillStyle = INK.muted;
       ctx.textBaseline = 'top';
-      const label = `${Math.round(geo.horizon * BOHR_PM)} pm`;
+      const label = (atoms.length > 1 ? `${a.symbol} ` : '') + `${Math.round(a.atomicRadius)} pm`;
       // Right of the line, or left of it when it would run off the plot.
       const fits = hx + 3 + ctx.measureText(label).width <= M.l + pw;
       ctx.textAlign = fits ? 'left' : 'right';
-      ctx.fillText(label, fits ? hx + 3 : hx - 3, M.t);
-    }
+      ctx.fillText(label, fits ? hx + 3 : hx - 3, M.t + 12 * i);
+    });
 
     // curves
     const rs = Array.from({ length: SAMPLES + 1 }, (_, i) => (i / SAMPLES) * rMax);

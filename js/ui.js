@@ -1,5 +1,5 @@
 // Side panel (periodic table, element card, orbital legend, controls) and the
-// 2D overlay drawn over the WebGL canvas (horizon ring, axes, scale bar).
+// 2D overlay drawn over the WebGL canvas (atomic-radius ring, axes, scale bar).
 
 import { ELEMENTS, ORBITALS, stepElement } from './elements.js';
 import { SUBSHELLS, orbitalsOf, orbitalChroma } from './orbitals.js';
@@ -229,7 +229,8 @@ function renderCard(app, A, B) {
         infoRow('Configuration', A.configShort, A.config),
         infoRow('Period / Group', periodGroup(A)),
         infoRow('Electronegativity', en(A)),
-        infoRow('1st ionization', `${A.ionizationEnergy.toFixed(3)} eV`)),
+        infoRow('1st ionization', `${A.ionizationEnergy.toFixed(3)} eV`),
+        infoRow('Atomic radius', `${A.atomicRadius.toFixed(0)} pm`, RADIUS_TITLE)),
     );
     return;
   }
@@ -250,7 +251,8 @@ function renderCard(app, A, B) {
         row('Configuration', A.configShort, B.configShort, A.config, B.config),
         row('Period / Group', periodGroup(A), periodGroup(B)),
         row('Electronegativity', en(A), en(B)),
-        row('1st ionization', `${A.ionizationEnergy.toFixed(3)} eV`, `${B.ionizationEnergy.toFixed(3)} eV`))),
+        row('1st ionization', `${A.ionizationEnergy.toFixed(3)} eV`, `${B.ionizationEnergy.toFixed(3)} eV`),
+        row('Atomic radius', `${A.atomicRadius.toFixed(0)} pm`, `${B.atomicRadius.toFixed(0)} pm`, RADIUS_TITLE, RADIUS_TITLE))),
   );
 }
 
@@ -261,6 +263,8 @@ function tileCanvas(el, scale = 1) {
   return c;
 }
 const periodGroup = el => `${el.period} / ${el.group ?? 'f-block'}`;
+const RADIUS_TITLE = 'Rahm atomic radius: where the free atom\'s electron density falls to ' +
+  '0.001 e/bohr³ (Rahm, Hoffmann & Ashcroft 2016)';
 const en = el => (el.electronegativity == null ? '—' : el.electronegativity.toFixed(2));
 
 // ------------------------------------------------------------ orbital legend
@@ -405,11 +409,10 @@ function infoRow(k, v, title) {
 }
 
 export function updateStatus(state, views, fps, renderK = 1) {
-  const h = views.map(v => v.geo.horizon);
+  const rad = views.map(v => v.element.atomicRadius);
   const text = views.length === 1
-    ? `horizon radius = 2σ = ${(h[0] * BOHR_PM).toFixed(0)} pm (${h[0].toFixed(2)} a₀)`
-    : 'horizon radius = 2σ: ' + views.map((v, i) =>
-      `${v.element.symbol} ${(h[i] * BOHR_PM).toFixed(0)} pm`).join(' · ');
+    ? `Rahm atomic radius = ${rad[0].toFixed(0)} pm (${(rad[0] / BOHR_PM).toFixed(2)} a₀)`
+    : 'Rahm atomic radius: ' + views.map((v, i) => `${v.element.symbol} ${rad[i].toFixed(0)} pm`).join(' · ');
   $('#status').textContent = text +
     (fps ? `  ·  ${fps.toFixed(0)} fps` : '') +
     (renderK > 1 ? `  ·  1/${renderK} res` : '');
@@ -417,7 +420,7 @@ export function updateStatus(state, views, fps, renderK = 1) {
 
 // ------------------------------------------------------------ overlay
 // Fill text with a halo in the background colour so labels stay legible
-// over the horizon ring and the speckle.
+// over the atomic-radius ring and the speckle.
 function haloText(ctx, text, x, y, halo, width) {
   ctx.save();
   ctx.lineJoin = 'round';
@@ -429,7 +432,7 @@ function haloText(ctx, text, x, y, halo, width) {
 }
 
 // views: [{ element, geo }] with geo.rect in device px, GL origin
-// (bottom-left), from renderer.renderViews. Each pane gets its own horizon
+// (bottom-left), from renderer.renderViews. Each pane gets its own atomic-radius
 // ring, element tile and scale bar; the axes marker (shared orientation) is
 // drawn once, and two panes are separated by a thin divider.
 export function drawOverlay(canvas, state, views) {
@@ -496,7 +499,7 @@ export function drawOverlay(canvas, state, views) {
   ctx.restore();
 }
 
-// One pane: horizon ring, scale bar and element tile within `box`
+// One pane: atomic-radius ring, scale bar and element tile within `box`
 // (device px, top-left origin).
 function drawPane(ctx, state, el, geo, box, { dpr, fg, halo, hw, scaleBar = true, badge = null }) {
   const pxPerBohr = box.h / (2 * geo.halfExtent[1]);
@@ -511,8 +514,9 @@ function drawPane(ctx, state, el, geo, box, { dpr, fg, halo, hw, scaleBar = true
   ctx.textBaseline = 'alphabetic';
   ctx.lineWidth = 1 * dpr;
 
-  // Horizon ring (2 sigma).
-  const r = geo.horizon * pxPerBohr;
+  // Ring at the element's Rahm atomic radius (free-atom density 0.001
+  // e/bohr^3); the view itself is still sized to fit the model's cloud.
+  const r = (el.atomicRadius / BOHR_PM) * pxPerBohr;
   ctx.strokeStyle = fg;
   ctx.setLineDash([6 * dpr, 6 * dpr]);
   ctx.beginPath();
@@ -520,7 +524,7 @@ function drawPane(ctx, state, el, geo, box, { dpr, fg, halo, hw, scaleBar = true
   ctx.stroke();
   ctx.setLineDash([]);
   ctx.fillStyle = fg;
-  haloText(ctx, `${Math.round(geo.horizon * BOHR_PM)} pm`, cx + r * 0.707 + 4 * dpr, cy - r * 0.707 - 4 * dpr, halo, hw);
+  haloText(ctx, `${Math.round(el.atomicRadius)} pm`, cx + r * 0.707 + 4 * dpr, cy - r * 0.707 - 4 * dpr, halo, hw);
 
   // Scale bar: 1 Å, or 1 a0 if that is too long; bottom-right of the pane.
   if (scaleBar) drawScaleBar(ctx, box, pxPerBohr, k, { dpr, fg, halo, hw });

@@ -55,6 +55,14 @@ class TestElements(unittest.TestCase):
         self.assertEqual((by["Au"]["5d"], by["Au"]["6s"]), (10, 1))
         self.assertEqual((by["Gd"]["4f"], by["Gd"]["5d"]), (7, 1))
 
+    def test_rahm_atomic_radius(self):
+        by = {e["symbol"]: e for e in ELEMENTS}
+        for e in ELEMENTS:
+            self.assertTrue(100 <= e["atomicRadius"] <= 400, (e["symbol"], e["atomicRadius"]))
+        self.assertEqual((by["H"]["atomicRadius"], by["He"]["atomicRadius"], by["Cs"]["atomicRadius"]),
+                         (154, 134, 249))
+        self.assertIn("Rahm", DOC["sources"]["atomicRadius"])
+
     def test_reviewed_values_kept_for_first_36(self):
         by = {e["symbol"]: e for e in ELEMENTS}
         self.assertEqual(by["Li"]["mass"], 6.94)
