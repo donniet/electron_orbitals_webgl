@@ -50,16 +50,20 @@ uniform int uCount;
 out vec4 outColor;
 
 // ---------------------------------------------------------------- random
-uint pcg(uint v) {
-  uint state = v * 747796405u + 2891336453u;
-  uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
-  return (word >> 22u) ^ word;
+// Counter-based randomness: each orbital sample in each pixel hashes a
+// unique (x, y, frame seed, stream) with pcg4d (Jarzynski & Olano 2020), a
+// bijection on 128 bits, so no two pixels or samples can share or merge a
+// stream. One hash gives four uniforms (top 24 bits: exact in float32,
+// in [0, 1)); PTRS re-hashes with an offset stream if it needs more.
+uvec4 pcg4d(uvec4 v) {
+  v = v * 1664525u + 1013904223u;
+  v.x += v.y * v.w; v.y += v.z * v.x; v.z += v.x * v.y; v.w += v.y * v.z;
+  v ^= v >> 16u;
+  v.x += v.y * v.w; v.y += v.z * v.x; v.z += v.x * v.y; v.w += v.y * v.z;
+  return v;
 }
 
-float rand(inout uint s) {
-  s = pcg(s);
-  return float(s) * (1.0 / 4294967296.0);
-}
+float u01(uint v) { return float(v >> 8u) * (1.0 / 16777216.0); }   // top 24 bits, [0, 1)
 
 // log(k!) : exact table for small k, Stirling series above (float32-safe).
 float logFactorial(float k) {
@@ -77,19 +81,22 @@ float logFactorial(float k) {
 //  lambda < 10 : inversion with one uniform (pmf by recurrence).
 //  lambda >= 10: PTRS, transformed rejection with squeeze (Hormann 1993);
 //                ~1.1-1.3 iterations of 2 uniforms on average.
-int poisson(float lambda, inout uint s) {
+int poisson(float lambda, uvec3 key, uint stream) {
+  uvec4 h = pcg4d(uvec4(key, stream));
   if (lambda <= 0.0) return 0;
   if (lambda < 10.0) {
-    float u = rand(s);
+    float u = u01(h.x);
     float p = exp(-lambda), F = p;
     int k = 0;
     for (int i = 0; i < 64; i++) {
-      if (u <= F) break;
+      if (u <= F) return k;
       k++;
       p *= lambda / float(k);
       F += p;
     }
-    return k;
+    // u fell beyond the float32 limit of the cumulative sum (~1e-7 below 1);
+    // return the mode rather than the loop cap, so there are no hot pixels.
+    return int(lambda);
   }
   float slam = sqrt(lambda), loglam = log(lambda);
   float b = 0.931 + 2.53 * slam;
@@ -97,8 +104,11 @@ int poisson(float lambda, inout uint s) {
   float invalpha = 1.1239 + 1.1328 / (b - 3.4);
   float vr = 0.9277 - 3.6224 / (b - 2.0);
   for (int i = 0; i < 16; i++) {
-    float U = rand(s) - 0.5;
-    float V = rand(s);
+    // two uniforms per iteration: (x, y) then (z, w) of each hash
+    if (i > 0 && (i & 1) == 0) h = pcg4d(uvec4(key, stream + uint(i) * 1024u));
+    bool first = (i & 1) == 0;
+    float U = u01(first ? h.x : h.z) - 0.5;
+    float V = u01(first ? h.y : h.w);
     float us = 0.5 - abs(U);
     float k = floor((2.0 * a / us + b) * U + lambda + 0.43);
     if (us >= 0.07 && V <= vr) return int(k);
@@ -172,7 +182,7 @@ void main() {
   vec3 p = uRot * vec3(xy, 0.0);
   vec3 d = uRot * vec3(0.0, 0.0, 1.0);
 
-  uint s = pcg(uint(gl_FragCoord.x) + pcg(uint(gl_FragCoord.y) + pcg(uSeed)));
+  uvec3 key = uvec3(uvec2(gl_FragCoord.xy), uSeed);
 
   vec2 chroma = vec2(0.0);
   float total = 0.0;
@@ -184,7 +194,7 @@ void main() {
     float kappa = orb.y;
     float col = kappa * kappa * columnRef(o, kappa * p, d);
     float lambda = orb.x * col * orb.w;
-    int k = poisson(lambda, s);
+    int k = poisson(lambda, key, uint(i));      // stream = orbital slot (< 64)
     float sat = k > 0 ? min(1.0, pow(float(k) / uKMax, uGamma)) : 0.0;
     float h = orb.z * 6.28318530718;
     chroma += sat * o.kind.z * vec2(cos(h), sin(h));

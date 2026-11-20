@@ -148,12 +148,31 @@ export function pcg(v) {
   return ((word >>> 22) ^ word) >>> 0;
 }
 
-// Stateful RNG over pcg, uniform in [0, 1). Mirrors rand() in the shader.
-export function makeRng(seed) {
-  let s = seed >>> 0;
+// pcg4d (Jarzynski & Olano 2020): 128-bit bijective hash. Mirrors the shader.
+export function pcg4d(x, y, z, w) {
+  x = (Math.imul(x, 1664525) + 1013904223) >>> 0;
+  y = (Math.imul(y, 1664525) + 1013904223) >>> 0;
+  z = (Math.imul(z, 1664525) + 1013904223) >>> 0;
+  w = (Math.imul(w, 1664525) + 1013904223) >>> 0;
+  x = (x + Math.imul(y, w)) >>> 0; y = (y + Math.imul(z, x)) >>> 0;
+  z = (z + Math.imul(x, y)) >>> 0; w = (w + Math.imul(y, z)) >>> 0;
+  x = (x ^ (x >>> 16)) >>> 0; y = (y ^ (y >>> 16)) >>> 0;
+  z = (z ^ (z >>> 16)) >>> 0; w = (w ^ (w >>> 16)) >>> 0;
+  x = (x + Math.imul(y, w)) >>> 0; y = (y + Math.imul(z, x)) >>> 0;
+  z = (z + Math.imul(x, y)) >>> 0; w = (w + Math.imul(y, z)) >>> 0;
+  return [x, y, z, w];
+}
+
+// Counter-based RNG for stream (x, y, seed), uniform in [0, 1) from the top
+// 24 bits, consecutive pcg4d outputs. The shader uses the same hash and
+// uniform conversion, keyed per orbital sample (x, y, seed, slot) so each
+// sample's uniforms come from one hash; the uniforms are i.i.d. either way,
+// so the CPU sampler below draws from the same distribution.
+export function makeRng(seed, x = 0, y = 0) {
+  let ctr = 0, buf = null, idx = 4;
   return () => {
-    s = pcg(s);
-    return s / 4294967296;
+    if (idx >= 4) { buf = pcg4d(x >>> 0, y >>> 0, seed >>> 0, ctr >>> 0); ctr++; idx = 0; }
+    return (buf[idx++] >>> 8) / 16777216;
   };
 }
 
@@ -176,12 +195,12 @@ export function poisson(lambda, rand) {
     const u = rand();
     let p = Math.exp(-lambda), F = p, k = 0;
     for (let i = 0; i < 64; i++) {
-      if (u <= F) break;
+      if (u <= F) return k;
       k++;
       p *= lambda / k;
       F += p;
     }
-    return k;
+    return Math.floor(lambda);       // beyond the cumulative limit: mode, as in the shader
   }
   const slam = Math.sqrt(lambda), loglam = Math.log(lambda);
   const b = 0.931 + 2.53 * slam;
