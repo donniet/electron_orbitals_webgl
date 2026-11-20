@@ -60,25 +60,53 @@ float rand(inout uint s) {
   return float(s) * (1.0 / 4294967296.0);
 }
 
+// log(k!) : exact table for small k, Stirling series above (float32-safe).
+float logFactorial(float k) {
+  if (k < 10.0) {
+    const float LF[10] = float[10](0.0, 0.0, 0.69314718, 1.79175947, 3.17805383,
+                                   4.78749174, 6.57925121, 8.52516136, 10.6046029, 12.8018275);
+    return LF[int(k)];
+  }
+  float ik = 1.0 / k, ik2 = ik * ik;
+  return (k + 0.5) * log(k) - k + 0.91893853320467        // 0.5 log(2 pi)
+       + ik * (1.0 / 12.0 - ik2 * (1.0 / 360.0 - ik2 / 1260.0));
+}
+
+// Exact Poisson sampler with bounded cost.
+//  lambda < 10 : inversion with one uniform (pmf by recurrence).
+//  lambda >= 10: PTRS, transformed rejection with squeeze (Hormann 1993);
+//                ~1.1-1.3 iterations of 2 uniforms on average.
 int poisson(float lambda, inout uint s) {
   if (lambda <= 0.0) return 0;
-  if (lambda < 30.0) {
-    // Knuth: multiply uniforms until the product drops below e^-lambda.
-    float L = exp(-lambda);
-    float p = 1.0;
+  if (lambda < 10.0) {
+    float u = rand(s);
+    float p = exp(-lambda), F = p;
     int k = 0;
     for (int i = 0; i < 64; i++) {
-      p *= rand(s);
-      if (p <= L) break;
+      if (u <= F) break;
       k++;
+      p *= lambda / float(k);
+      F += p;
     }
     return k;
   }
-  // Large lambda: normal approximation.
-  float u1 = max(rand(s), 1e-7);
-  float u2 = rand(s);
-  float n = sqrt(-2.0 * log(u1)) * cos(6.28318530718 * u2);
-  return max(0, int(floor(lambda + sqrt(lambda) * n + 0.5)));
+  float slam = sqrt(lambda), loglam = log(lambda);
+  float b = 0.931 + 2.53 * slam;
+  float a = -0.059 + 0.02483 * b;
+  float invalpha = 1.1239 + 1.1328 / (b - 3.4);
+  float vr = 0.9277 - 3.6224 / (b - 2.0);
+  for (int i = 0; i < 16; i++) {
+    float U = rand(s) - 0.5;
+    float V = rand(s);
+    float us = 0.5 - abs(U);
+    float k = floor((2.0 * a / us + b) * U + lambda + 0.43);
+    if (us >= 0.07 && V <= vr) return int(k);
+    if (k < 0.0 || (us < 0.013 && V > us)) continue;
+    if (log(V) + log(invalpha) - log(a / (us * us) + b) <= -lambda + k * loglam - logFactorial(k)) {
+      return int(k);
+    }
+  }
+  return int(floor(lambda + 0.5));     // practically unreachable (p < 1e-15)
 }
 
 // ---------------------------------------------------------------- tables

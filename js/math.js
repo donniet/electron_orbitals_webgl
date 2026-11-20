@@ -157,22 +157,48 @@ export function makeRng(seed) {
   };
 }
 
-// Poisson sample, same algorithm as the shader.
+// log(k!): exact table for small k, Stirling series above. Mirrors the shader.
+const LOG_FACT = [0, 0, 0.69314718, 1.79175947, 3.17805383,
+  4.78749174, 6.57925121, 8.52516136, 10.6046029, 12.8018275];
+export function logFactorial(k) {
+  if (k < 10) return LOG_FACT[k];
+  const ik = 1 / k, ik2 = ik * ik;
+  return (k + 0.5) * Math.log(k) - k + 0.91893853320467 +
+    ik * (1 / 12 - ik2 * (1 / 360 - ik2 / 1260));
+}
+
+// Exact Poisson sample, same algorithm as the shader:
+//  lambda < 10 : inversion with one uniform;
+//  lambda >= 10: PTRS transformed rejection (Hormann 1993).
 export function poisson(lambda, rand) {
   if (!(lambda > 0)) return 0;
-  if (lambda < 30) {
-    const L = Math.exp(-lambda);
-    let p = 1, k = 0;
+  if (lambda < 10) {
+    const u = rand();
+    let p = Math.exp(-lambda), F = p, k = 0;
     for (let i = 0; i < 64; i++) {
-      p *= rand();
-      if (p <= L) break;
+      if (u <= F) break;
       k++;
+      p *= lambda / k;
+      F += p;
     }
     return k;
   }
-  const u1 = Math.max(rand(), 1e-7), u2 = rand();
-  const n = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-  return Math.max(0, Math.floor(lambda + Math.sqrt(lambda) * n + 0.5));
+  const slam = Math.sqrt(lambda), loglam = Math.log(lambda);
+  const b = 0.931 + 2.53 * slam;
+  const a = -0.059 + 0.02483 * b;
+  const invalpha = 1.1239 + 1.1328 / (b - 3.4);
+  const vr = 0.9277 - 3.6224 / (b - 2);
+  for (let i = 0; i < 16; i++) {
+    const U = rand() - 0.5;
+    const V = rand();
+    const us = 0.5 - Math.abs(U);
+    const k = Math.floor((2 * a / us + b) * U + lambda + 0.43);
+    if (us >= 0.07 && V <= vr) return k;
+    if (k < 0 || (us < 0.013 && V > us)) continue;
+    if (Math.log(V) + Math.log(invalpha) - Math.log(a / (us * us) + b) <=
+        -lambda + k * loglam - logFactorial(k)) return k;
+  }
+  return Math.floor(lambda + 0.5);
 }
 
 // ------------------------------------------------------------ color
