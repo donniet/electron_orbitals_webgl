@@ -1,6 +1,13 @@
 #version 300 es
 // Fragment shader: per-pixel Poisson detections from orbital column densities.
 //
+// Layout (read top to bottom in order of importance):
+//   Inputs                 uniforms and the per-orbital uniform block
+//   main()                 physics per pixel, then rendering to RGB
+//   1. Physics             orbital column densities from the moment tables
+//   2. Rendering helpers   colour conversion
+//   3. Numerical methods   3a. uniform random numbers, 3b. Poisson sampling
+//
 // Host-provided defines (injected by js/gl.js createProgram after #version):
 //   NUM_ORBITALS  size of the Orbitals uniform block (js/orbitals.js)
 #ifndef NUM_ORBITALS
@@ -14,6 +21,9 @@ precision highp int;
 precision highp sampler2D;
 
 
+// ==========================================================================
+// Inputs
+// ==========================================================================
 // Moment tables: row r, texel i = (I0, I2, I4, I6) of radial function r at
 // scaled impact parameter u = i * uTableUMax / (uTableN - 1), u = Z b / n.
 uniform sampler2D uTables;
@@ -45,7 +55,133 @@ uniform int uCount;
 
 out vec4 outColor;
 
-// ---------------------------------------------------------------- random
+// ==========================================================================
+// Forward declarations (definitions follow main)
+// ==========================================================================
+// 1. Physics
+vec4  momentAt(int row, float u);
+float columnRef(Orbital o, vec3 P, vec3 d);
+// 2. Rendering helpers
+vec3  hsv2rgb(vec3 c);
+// 3. Numerical methods
+int   poisson(float lambda, uvec3 key, uint stream);
+float logFactorial(float k);
+uvec4 pcg4d(uvec4 v);
+float u01(uint v);
+
+void main() {
+  // --- Physics: expected detections lambda for each orbital along this
+  //     pixel's ray, sampled as Poisson counts.
+  // Orthographic ray through this pixel. In view space the ray is
+  // (x, y, 0) + t (0, 0, 1), so (x, y, 0) is already the closest point to
+  // the nucleus and b = |(x, y)|.
+  // Each (low-res) fragment stands for the centre of a k x k block of device
+  // pixels, so geometry matches the native-resolution view exactly.
+  vec2 ndc = gl_FragCoord.xy * uScale / uResolution * 2.0 - 1.0;
+  vec2 xy = ndc * uHalfExtent;
+  vec3 p = uRot * vec3(xy, 0.0);
+  vec3 d = uRot * vec3(0.0, 0.0, 1.0);
+
+  uvec3 key = uvec3(uvec2(gl_FragCoord.xy), uSeed);
+
+  vec2 chroma = vec2(0.0);
+  float total = 0.0;
+
+  for (int i = 0; i < NUM_ORBITALS; i++) {
+    if (i >= uCount) break;
+    Orbital o = uOrbitals[i];
+    vec4 orb = o.orb;
+    float kappa = orb.y;
+    float col = kappa * kappa * columnRef(o, kappa * p, d);
+    float lambda = orb.x * col * orb.w;
+    int k = poisson(lambda, key, uint(i));      // stream = orbital slot (< 64)
+    float sat = k > 0 ? min(1.0, pow(float(k) / uKMax, uGamma)) : 0.0;
+    float h = orb.z * TWO_PI;
+    chroma += sat * o.kind.z * vec2(cos(h), sin(h));
+    total += sat;
+  }
+
+  // --- Rendering: tone curve per orbital, hue compositing, then RGB.
+  float hue = fract(atan(chroma.y, chroma.x) / TWO_PI + 1.0);
+  float purity = total > 0.0 ? length(chroma) / total : 0.0;
+  float amount = min(total, 1.0);
+
+  vec3 rgb;
+  if (uMode == 0) {
+    // Dark (light on black): detections emit in the orbital hue; overlaps
+    // mix toward white.
+    rgb = hsv2rgb(vec3(hue, purity, amount));
+  } else {
+    // White (ink on paper): the exact dual of the dark image -- the negative
+    // of the dark image computed with every hue rotated 180 degrees. Rotating
+    // all orbital hues rotates the summed hue vector, so that is just
+    // hue + 1/2. A single detection becomes its orbital colour as ink, empty
+    // space is white, and overlaps mix toward black.
+    rgb = vec3(1.0) - hsv2rgb(vec3(fract(hue + 0.5), purity, amount));
+  }
+  outColor = vec4(rgb, 1.0);
+}
+
+// ==========================================================================
+// 1. Physics: orbital column densities
+// ==========================================================================
+// Manual linear interpolation (float textures need not be filterable).
+vec4 momentAt(int row, float u) {
+  float x = u / uTableUMax * float(uTableN - 1);
+  if (x >= float(uTableN - 1)) return vec4(0.0);
+  int i = int(x);
+  float f = x - float(i);
+  return mix(texelFetch(uTables, ivec2(i, row), 0),
+             texelFetch(uTables, ivec2(i + 1, row), 0), f);
+}
+
+// Column density in reference units (Z0 = n) for scaled closest point P.
+//  s: I0 / 4pi
+//  p: (e.P)^2 I0 + (e.d)^2 I2
+//  d: a^2 I0 + (4 beta^2 + 2 a c) I2 + c^2 I4,  a = PQP, beta = PQd, c = dQd
+//  f: a0^2 I0 + (a1^2 + 2 a0 a2) I2 + (a2^2 + 2 a1 a3) I4 + a3^2 I6,
+//     a0 = C(P,P,P), a1 = 3C(P,P,d), a2 = 3C(P,d,d), a3 = C(d,d,d)
+float columnRef(Orbital o, vec3 P, vec3 d) {
+  int l = int(o.kind.x + 0.5);
+  vec4 m = momentAt(int(o.kind.y + 0.5), length(P));
+  if (l == 0) return m.x * 0.0795774715459;   // 1 / (4 pi)
+  if (l == 1) {
+    float ep = dot(o.c0.xyz, P), ed = dot(o.c0.xyz, d);
+    return ep * ep * m.x + ed * ed * m.y;
+  }
+  if (l == 2) {
+    mat3 Q = mat3(o.c0.x, o.c0.y, o.c0.z,
+                  o.c0.y, o.c0.w, o.c1.x,
+                  o.c0.z, o.c1.x, o.c1.y);
+    vec3 Qd = Q * d;
+    float a = dot(P, Q * P), beta = dot(P, Qd), c = dot(d, Qd);
+    return a * a * m.x + (4.0 * beta * beta + 2.0 * a * c) * m.y + c * c * m.z;
+  }
+  // f: contract the cubic tensor once with P and once with d
+  //   C(a, b, c) = b . M(a) c,  M(a) = a.x Cx + a.y Cy + a.z Cz
+  mat3 Cx = mat3(o.c0.x, o.c0.y, o.c0.z,  o.c0.y, o.c0.w, o.c1.x,  o.c0.z, o.c1.x, o.c1.y);
+  mat3 Cy = mat3(o.c0.y, o.c0.w, o.c1.x,  o.c0.w, o.c1.z, o.c1.w,  o.c1.x, o.c1.w, o.c2.x);
+  mat3 Cz = mat3(o.c0.z, o.c1.x, o.c1.y,  o.c1.x, o.c1.w, o.c2.x,  o.c1.y, o.c2.x, o.c2.y);
+  mat3 MP = P.x * Cx + P.y * Cy + P.z * Cz;
+  mat3 Md = d.x * Cx + d.y * Cy + d.z * Cz;
+  vec3 MPd = MP * d;
+  float a0 = dot(P, MP * P), a1 = 3.0 * dot(P, MPd), a2 = 3.0 * dot(d, MPd), a3 = dot(d, Md * d);
+  return a0 * a0 * m.x + (a1 * a1 + 2.0 * a0 * a2) * m.y +
+         (a2 * a2 + 2.0 * a1 * a3) * m.z + a3 * a3 * m.w;
+}
+
+// ==========================================================================
+// 2. Rendering helpers
+// ==========================================================================
+vec3 hsv2rgb(vec3 c) {
+  vec3 p = abs(fract(c.xxx + vec3(1.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
+  return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
+}
+
+// ==========================================================================
+// 3. Numerical methods
+// ==========================================================================
+// --- 3a. Uniform random numbers -------------------------------------------
 // Counter-based randomness: each orbital sample in each pixel hashes a
 // unique (x, y, frame seed, stream) with pcg4d (Jarzynski & Olano 2020), a
 // bijection on 128 bits, so no two pixels or samples can share or merge a
@@ -61,6 +197,7 @@ uvec4 pcg4d(uvec4 v) {
 
 float u01(uint v) { return float(v >> 8u) * (1.0 / 16777216.0); }   // top 24 bits, [0, 1)
 
+// --- 3b. Poisson sampling -------------------------------------------------
 // log(k!) : exact table for small k, Stirling series above (float32-safe).
 float logFactorial(float k) {
   if (k < 10.0) {
@@ -114,105 +251,4 @@ int poisson(float lambda, uvec3 key, uint stream) {
     }
   }
   return int(floor(lambda + 0.5));     // practically unreachable (p < 1e-15)
-}
-
-// ---------------------------------------------------------------- tables
-// Manual linear interpolation (float textures need not be filterable).
-vec4 momentAt(int row, float u) {
-  float x = u / uTableUMax * float(uTableN - 1);
-  if (x >= float(uTableN - 1)) return vec4(0.0);
-  int i = int(x);
-  float f = x - float(i);
-  return mix(texelFetch(uTables, ivec2(i, row), 0),
-             texelFetch(uTables, ivec2(i + 1, row), 0), f);
-}
-
-// Column density in reference units (Z0 = n) for scaled closest point P.
-//  s: I0 / 4pi
-//  p: (e.P)^2 I0 + (e.d)^2 I2
-//  d: a^2 I0 + (4 beta^2 + 2 a c) I2 + c^2 I4,  a = PQP, beta = PQd, c = dQd
-//  f: a0^2 I0 + (a1^2 + 2 a0 a2) I2 + (a2^2 + 2 a1 a3) I4 + a3^2 I6,
-//     a0 = C(P,P,P), a1 = 3C(P,P,d), a2 = 3C(P,d,d), a3 = C(d,d,d)
-float columnRef(Orbital o, vec3 P, vec3 d) {
-  int l = int(o.kind.x + 0.5);
-  vec4 m = momentAt(int(o.kind.y + 0.5), length(P));
-  if (l == 0) return m.x * 0.0795774715459;   // 1 / (4 pi)
-  if (l == 1) {
-    float ep = dot(o.c0.xyz, P), ed = dot(o.c0.xyz, d);
-    return ep * ep * m.x + ed * ed * m.y;
-  }
-  if (l == 2) {
-    mat3 Q = mat3(o.c0.x, o.c0.y, o.c0.z,
-                  o.c0.y, o.c0.w, o.c1.x,
-                  o.c0.z, o.c1.x, o.c1.y);
-    vec3 Qd = Q * d;
-    float a = dot(P, Q * P), beta = dot(P, Qd), c = dot(d, Qd);
-    return a * a * m.x + (4.0 * beta * beta + 2.0 * a * c) * m.y + c * c * m.z;
-  }
-  // f: contract the cubic tensor once with P and once with d
-  //   C(a, b, c) = b . M(a) c,  M(a) = a.x Cx + a.y Cy + a.z Cz
-  mat3 Cx = mat3(o.c0.x, o.c0.y, o.c0.z,  o.c0.y, o.c0.w, o.c1.x,  o.c0.z, o.c1.x, o.c1.y);
-  mat3 Cy = mat3(o.c0.y, o.c0.w, o.c1.x,  o.c0.w, o.c1.z, o.c1.w,  o.c1.x, o.c1.w, o.c2.x);
-  mat3 Cz = mat3(o.c0.z, o.c1.x, o.c1.y,  o.c1.x, o.c1.w, o.c2.x,  o.c1.y, o.c2.x, o.c2.y);
-  mat3 MP = P.x * Cx + P.y * Cy + P.z * Cz;
-  mat3 Md = d.x * Cx + d.y * Cy + d.z * Cz;
-  vec3 MPd = MP * d;
-  float a0 = dot(P, MP * P), a1 = 3.0 * dot(P, MPd), a2 = 3.0 * dot(d, MPd), a3 = dot(d, Md * d);
-  return a0 * a0 * m.x + (a1 * a1 + 2.0 * a0 * a2) * m.y +
-         (a2 * a2 + 2.0 * a1 * a3) * m.z + a3 * a3 * m.w;
-}
-
-vec3 hsv2rgb(vec3 c) {
-  vec3 p = abs(fract(c.xxx + vec3(1.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
-  return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
-}
-
-void main() {
-  // Orthographic ray through this pixel. In view space the ray is
-  // (x, y, 0) + t (0, 0, 1), so (x, y, 0) is already the closest point to
-  // the nucleus and b = |(x, y)|.
-  // Each (low-res) fragment stands for the centre of a k x k block of device
-  // pixels, so geometry matches the native-resolution view exactly.
-  vec2 ndc = gl_FragCoord.xy * uScale / uResolution * 2.0 - 1.0;
-  vec2 xy = ndc * uHalfExtent;
-  vec3 p = uRot * vec3(xy, 0.0);
-  vec3 d = uRot * vec3(0.0, 0.0, 1.0);
-
-  uvec3 key = uvec3(uvec2(gl_FragCoord.xy), uSeed);
-
-  vec2 chroma = vec2(0.0);
-  float total = 0.0;
-
-  for (int i = 0; i < NUM_ORBITALS; i++) {
-    if (i >= uCount) break;
-    Orbital o = uOrbitals[i];
-    vec4 orb = o.orb;
-    float kappa = orb.y;
-    float col = kappa * kappa * columnRef(o, kappa * p, d);
-    float lambda = orb.x * col * orb.w;
-    int k = poisson(lambda, key, uint(i));      // stream = orbital slot (< 64)
-    float sat = k > 0 ? min(1.0, pow(float(k) / uKMax, uGamma)) : 0.0;
-    float h = orb.z * TWO_PI;
-    chroma += sat * o.kind.z * vec2(cos(h), sin(h));
-    total += sat;
-  }
-
-  float hue = fract(atan(chroma.y, chroma.x) / TWO_PI + 1.0);
-  float purity = total > 0.0 ? length(chroma) / total : 0.0;
-  float amount = min(total, 1.0);
-
-  vec3 rgb;
-  if (uMode == 0) {
-    // Dark (light on black): detections emit in the orbital hue; overlaps
-    // mix toward white.
-    rgb = hsv2rgb(vec3(hue, purity, amount));
-  } else {
-    // White (ink on paper): the exact dual of the dark image -- the negative
-    // of the dark image computed with every hue rotated 180 degrees. Rotating
-    // all orbital hues rotates the summed hue vector, so that is just
-    // hue + 1/2. A single detection becomes its orbital colour as ink, empty
-    // space is white, and overlaps mix toward black.
-    rgb = vec3(1.0) - hsv2rgb(vec3(fract(hue + 0.5), purity, amount));
-  }
-  outColor = vec4(rgb, 1.0);
 }
