@@ -11,9 +11,12 @@ install.
 
 ## Running it
 
-Serve the repository root with Python's built-in web server:
+Get the code from <https://github.com/donniet/electron_orbitals_webgl> and
+serve the repository root with Python's built-in web server:
 
 ```sh
+git clone https://github.com/donniet/electron_orbitals_webgl.git
+cd electron_orbitals_webgl
 python3 -m http.server 8000
 ```
 
