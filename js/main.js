@@ -31,7 +31,7 @@ const params = new URLSearchParams(location.search);
 // motion or ?spin=0. A fling replaces it; grabbing the atom stops it.
 function defaultSpin() {
   if (params.get('spin') === '0' || prefersReducedMotion()) return null;
-  return { axis: [0, 1, 0], rate: 0.00025 };            // rad/ms (~14 deg/s)
+  return { axis: [0, 1, 0], rate: 0.0025 };            // rad/ms (~14 deg/s)
 }
 
 function defaultOrientation() {
