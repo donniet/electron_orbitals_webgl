@@ -408,14 +408,10 @@ function infoRow(k, v, title) {
   return h('div', { class: 'info-row' }, h('span', { class: 'k' }, k), val);
 }
 
-export function updateStatus(state, views, fps, renderK = 1) {
-  const rad = views.map(v => v.element.atomicRadius);
-  const text = views.length === 1
-    ? `Rahm atomic radius = ${rad[0].toFixed(0)} pm (${(rad[0] / BOHR_PM).toFixed(2)} a₀)`
-    : 'Rahm atomic radius: ' + views.map((v, i) => `${v.element.symbol} ${rad[i].toFixed(0)} pm`).join(' · ');
-  $('#status').textContent = text +
-    (fps ? `  ·  ${fps.toFixed(0)} fps` : '') +
-    (renderK > 1 ? `  ·  1/${renderK} res` : '');
+// Frame rate and render resolution, under the Resolution selector.
+export function updatePerf(fps, renderK = 1, paused = false) {
+  const res = renderK > 1 ? `1/${renderK} resolution` : 'full resolution';
+  $('#perf').textContent = (paused ? 'paused' : `${fps.toFixed(0)} fps`) + ` · ${res}`;
 }
 
 // ------------------------------------------------------------ overlay
@@ -528,7 +524,7 @@ function drawPane(ctx, state, el, geo, box, { dpr, fg, halo, hw, scaleBar = true
 
   // Scale bar: 1 Å, or 1 a0 if that is too long; bottom-right of the pane.
   if (scaleBar) drawScaleBar(ctx, box, pxPerBohr, k, { dpr, fg, halo, hw });
-  drawPaneLabel(ctx, state, el, box, k, kt, { dpr, fg, halo, hw, badge });
+  drawPaneLabel(ctx, state, el, box, k, kt, { dpr, fg, halo, hw, badge, compact });
 }
 
 function drawScaleBar(ctx, box, pxPerBohr, k, { dpr, fg, halo, hw }) {
@@ -549,7 +545,7 @@ function drawScaleBar(ctx, box, pxPerBohr, k, { dpr, fg, halo, hw }) {
 
 // Element tile (same rendering as the side-panel card) with name, category
 // and configuration beside it, top-left of the pane.
-function drawPaneLabel(ctx, state, el, box, k, kt, { dpr, fg, halo, hw, badge }) {
+function drawPaneLabel(ctx, state, el, box, k, kt, { dpr, fg, halo, hw, badge, compact }) {
   const tx = box.left + 16 * k * dpr, ty = box.top + 16 * k * dpr;
   drawElementTile(ctx, el, tx, ty, k * dpr);
   if (badge) {                              // A / B, matching the periodic table
@@ -574,4 +570,18 @@ function drawPaneLabel(ctx, state, el, box, k, kt, { dpr, fg, halo, hw, badge })
   ctx.font = `${12 * kt * dpr}px system-ui, sans-serif`;
   haloText(ctx, el.category, lx, ty + 28 * kt * dpr, halo, hw);
   haloText(ctx, el.configShort, lx, ty + 46 * kt * dpr, halo, hw);
+
+  // Rahm atomic radius of this pane's atom: top-right of the pane, or (on
+  // compact panes, where it would collide with the name) a fourth line
+  // under the configuration.
+  const pm = Math.round(el.atomicRadius), a0 = (el.atomicRadius / BOHR_PM).toFixed(2);
+  ctx.fillStyle = state.mode === 'white' ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)';
+  if (compact) {
+    ctx.font = `${10 * dpr}px ui-monospace, monospace`;
+    haloText(ctx, `Rahm radius ${pm} pm`, lx, ty + 64 * kt * dpr, halo, hw);
+  } else {
+    ctx.font = `${12 * dpr}px ui-monospace, monospace`;
+    ctx.textAlign = 'right';
+    haloText(ctx, `Rahm atomic radius = ${pm} pm (${a0} a₀)`, box.left + box.w - 12 * dpr, box.top + 10 * dpr, halo, hw);
+  }
 }

@@ -17,7 +17,7 @@ import { createRenderer, baseHalf, viewGeometry, splitViews } from './renderer.j
 import { createScaleAnimator, prefersReducedMotion } from './view.js';
 import { loadTables } from './tables.js';
 import { attachControls } from './controls.js';
-import { buildUI, syncControls, updateElement, updateTable, updateStatus, drawOverlay } from './ui.js';
+import { buildUI, syncControls, updateElement, updateTable, updatePerf, drawOverlay } from './ui.js';
 import { atomsOf, valenceUnion, defaultExpandedShells } from './selection.js';
 import { createRadialPlot, radialMode } from './radial.js';
 
@@ -317,7 +317,7 @@ function frame(t) {
   lastT = t;
   if (dt > 0) fps = fps * 0.9 + (1000 / dt) * 0.1;
   autoResolution(t);
-  if (lastViews) updateStatus(state, lastViews, state.paused ? 0 : fps, renderK);
+  updatePerf(fps, renderK, state.paused);
   requestAnimationFrame(frame);
 }
 

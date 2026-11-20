@@ -60,19 +60,6 @@ body.mode-white #view { background: #fff; }
 #gl.dragging { cursor: grabbing; }
 #overlay { pointer-events: none; }
 
-#status {
-  position: absolute;
-  right: 12px;
-  top: 10px;
-  font: 12px ui-monospace, monospace;
-  color: rgba(255, 255, 255, 0.6);
-  pointer-events: none;
-}
-body.mode-white #status { color: rgba(0, 0, 0, 0.6); }
-/* halo so the readout stays legible over the ring and the speckle */
-#status { text-shadow: 0 0 2px #000, 0 0 4px #000, 0 0 6px #000; }
-body.mode-white #status { text-shadow: 0 0 2px #fff, 0 0 4px #fff, 0 0 6px #fff; }
-
 #error {
   position: absolute;
   inset: 40% 10% auto;
@@ -311,6 +298,7 @@ footer { color: var(--muted); font-size: 11px; margin-top: auto; }
 
 /* ---------------------------------------------------------------- controls */
 .slider { display: block; margin-bottom: 8px; }
+.perf { color: var(--muted); font: 11px ui-monospace, monospace; margin: -2px 0 8px; min-height: 1em; }
 .slider span { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
 .slider output { color: var(--fg); font-variant-numeric: tabular-nums; }
 .slider input { width: 100%; accent-color: var(--accent); }
@@ -359,26 +347,13 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
   }
 }
 
-/* Compact strip and status readout on narrow or short screens. */
+/* Compact strip on narrow or short screens. */
 @media (orientation: portrait) and (max-width: 1024px), (max-width: 640px), (max-height: 520px) {
   .ptable {
     grid-template-columns: repeat(18, minmax(0, 26px));
     gap: 2px;
     padding: 6px 36px 6px 6px;
   }
-  #status {
-    top: auto;
-    right: auto;
-    bottom: 8px;
-    left: 50%;
-    transform: translateX(-50%);
-    font-size: 10px;
-    white-space: nowrap;
-    padding: 1px 6px;
-    border-radius: 4px;
-    background: rgba(0, 0, 0, 0.9);      /* pill: legible where it crosses the ring */
-  }
-  body.mode-white #status { background: rgba(255, 255, 255, 0.9); }
   .pt-z { display: none; }
   .pt-sym { font-size: 11px; }
   .pt-cell { border-radius: 3px; }
