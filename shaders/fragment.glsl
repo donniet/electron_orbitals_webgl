@@ -2,7 +2,7 @@
 // Fragment shader: per-pixel Poisson detections from orbital column densities.
 //
 // Layout (read top to bottom in order of importance):
-//   Inputs                 uniforms and the per-orbital uniform block
+//   Inputs                 uniforms, the per-orbital uniform block, the pixel's ray
 //   main()                 physics per pixel, then rendering to RGB
 //   1. Physics             orbital column densities from the moment tables
 //   2. Rendering helpers   colour conversion
@@ -30,10 +30,6 @@ uniform sampler2D uTables;
 uniform int   uTableN;
 uniform float uTableUMax;
 
-uniform vec2  uResolution;   // full canvas size (device px)
-uniform float uScale;        // render scale k: this pass draws 1/k resolution
-uniform vec2  uHalfExtent;   // half width/height of the view (Bohr)
-uniform mat3  uRot;          // view -> atom frame
 uniform uint  uSeed;         // per-frame random seed
 uniform float uKMax;         // detections giving full brightness
 uniform float uGamma;        // tone curve: amount = (k / uKMax)^uGamma
@@ -52,6 +48,10 @@ layout(std140) uniform Orbitals {
   Orbital uOrbitals[NUM_ORBITALS];
 };
 uniform int uCount;
+
+// This pixel's ray, from the vertex shader (atom frame, Bohr):
+in vec3 vP;                  // closest point of the ray to the nucleus
+flat in vec3 vD;             // unit direction
 
 out vec4 outColor;
 
@@ -72,15 +72,9 @@ float u01(uint v);
 void main() {
   // --- Physics: expected detections lambda for each orbital along this
   //     pixel's ray, sampled as Poisson counts.
-  // Orthographic ray through this pixel. In view space the ray is
-  // (x, y, 0) + t (0, 0, 1), so (x, y, 0) is already the closest point to
-  // the nucleus and b = |(x, y)|.
-  // Each (low-res) fragment stands for the centre of a k x k block of device
-  // pixels, so geometry matches the native-resolution view exactly.
-  vec2 ndc = gl_FragCoord.xy * uScale / uResolution * 2.0 - 1.0;
-  vec2 xy = ndc * uHalfExtent;
-  vec3 p = uRot * vec3(xy, 0.0);
-  vec3 d = uRot * vec3(0.0, 0.0, 1.0);
+  // The ray through this pixel: p + t d (p . d = 0), from the vertex shader.
+  vec3 p = vP;
+  vec3 d = vD;
 
   uvec3 key = uvec3(uvec2(gl_FragCoord.xy), uSeed);
 

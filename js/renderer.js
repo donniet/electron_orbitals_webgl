@@ -194,8 +194,9 @@ export function createRenderer(canvas, tables) {
     gl.bindBuffer(gl.UNIFORM_BUFFER, ubo);
     gl.bufferSubData(gl.UNIFORM_BUFFER, 0, blockData, 0, Math.max(1, count) * STRIDE);
 
-    gl.uniform2f(u.uResolution, w, h);
-    gl.uniform1f(u.uScale, k);
+    // The 1/k buffer covers bw*k x bh*k device pixels (>= the canvas); the
+    // vertex shader scales its NDC so geometry matches the native view.
+    gl.uniform2f(u.uNdcScale, (bw * k) / w, (bh * k) / h);
     gl.uniform2f(u.uHalfExtent, geo.halfExtent[0], geo.halfExtent[1]);
     gl.uniformMatrix3fv(u.uRot, false, mat3ToGL(viewToAtom(state.orientation)));
     gl.uniform1ui(u.uSeed, state.seed >>> 0);
