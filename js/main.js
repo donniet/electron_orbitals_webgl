@@ -259,6 +259,18 @@ const recorder = createRecorderUI({
   views: () => (state.second ? [state.element, state.second] : [state.element])
     .map((element, i) => ({ element, visible: i === 0 ? state.visible : undefined })),
   changed: () => { dirty = true; },
+  // Lay the strip out collapsed for a moment (no paint happens in between)
+  // to measure it, whatever its current state.
+  tableHeight: () => {
+    const pt = document.getElementById('ptable');
+    const hidden = pt.hidden, collapsed = app.tableCollapsed;
+    pt.hidden = false;
+    if (!collapsed) { app.tableCollapsed = true; updateTable(app); }
+    const h = pt.getBoundingClientRect().height;
+    if (!collapsed) { app.tableCollapsed = false; updateTable(app); }
+    pt.hidden = hidden;
+    return h;
+  },
 });
 const radial = createRadialPlot(
   document.getElementById('radial'),

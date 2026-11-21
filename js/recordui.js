@@ -39,6 +39,7 @@ const LARGE_BYTES = 1.5e9;
  *                                 now; panes: pane rects (GL origin) as drawn
  *   views() -> [{ element, visible }]                    panes to record
  *   changed()                     redraw (crop preview, frozen view)
+ *   tableHeight() -> px           height of the collapsed periodic-table strip
  * }
  * Returns { phase(), crop(), drawCrop(overlayCanvas), refresh(), open() }.
  */
@@ -207,7 +208,17 @@ export function createRecorderUI(ctx) {
         h('span', { className: 'rb-warn' }, error),
         h('span', { className: 'rb-actions' }, h('button', { onclick: open }, 'Back'), h('button', { onclick: close }, 'Close')));
     }
+    fit();
     ctx.changed();
+  }
+
+  // Same height as the collapsed periodic-table strip; controls that do not
+  // fit in that height go on one row that scrolls sideways.
+  function fit() {
+    if (phase === 'closed') return;
+    bar.classList.remove('one-row');
+    bar.style.height = `${ctx.tableHeight()}px`;
+    if (bar.scrollHeight > bar.clientHeight + 1) bar.classList.add('one-row');
   }
 
   // What the video will show: one rectangle per pane (device px, top-left
@@ -237,7 +248,9 @@ export function createRecorderUI(ctx) {
 
   // The view size or spin can change while the controls are open (resize,
   // device rotation, a fling): refresh sizes, formats and frame counts.
-  function refresh() { if (phase === 'setup') { refreshFormats(); render(); } }
+  function refresh() {
+    if (phase === 'setup') { refreshFormats(); render(); } else fit();
+  }
 
   return { phase: () => phase, crop, drawCrop, refresh, open: () => { if (phase === 'closed' && videoSupported()) open(); } };
 }

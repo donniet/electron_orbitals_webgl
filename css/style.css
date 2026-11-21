@@ -121,36 +121,49 @@ footer a { color: var(--accent); }
 @keyframes rec-blink { 50% { opacity: 0.25; } }
 @media (prefers-reduced-motion: reduce) { .rec-dot.blink { animation: none; outline: 2px solid #e0302a; outline-offset: 2px; } }
 
-/* Recording controls: take the periodic-table strip's place. */
+/* Recording controls: take the periodic-table strip's place, at the height
+   of the collapsed strip (set from JS: it depends on the layout). Compact
+   controls wrap onto two rows where they fit; otherwise (.one-row, narrow
+   screens) they stay on one row that scrolls sideways. */
 .ptable[hidden] { display: none; }
 .recbar {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px;
-  padding: 10px 12px; min-height: 48px;
+  display: flex; flex-wrap: wrap; align-items: center; align-content: center; gap: 4px 14px;
+  padding: 4px 10px; overflow: hidden;
   background: var(--panel); border-bottom: 1px solid var(--border);
-  font-size: 13px;
+  font-size: 12px;
+}
+.recbar > * { flex: none; }
+.recbar.one-row { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; white-space: nowrap; }
+/* ...with the action buttons pinned to the right edge, so Record / Close /
+   Cancel stay reachable while the other controls scroll beneath them. */
+.recbar.one-row .rb-actions {
+  position: sticky; right: -10px; z-index: 1;
+  margin-right: -10px; padding: 0 10px 0 12px;
+  background: linear-gradient(to right, transparent, var(--panel) 10px);
 }
 .recbar[hidden] { display: none; }
 .recbar .rb-title { font-weight: 600; }
 .recbar .rb-title::before { content: '●'; color: #e0302a; margin-right: 6px; }
-.recbar .rb-field { display: flex; align-items: center; gap: 6px; }
-.recbar .rb-field > span:first-child { color: var(--muted); font-size: 12px; }
-.recbar .rb-radios { display: inline-flex; gap: 10px; align-items: center; }
-.recbar .rb-muted { color: var(--muted); font-size: 12px; }
+.recbar .rb-field { display: flex; align-items: center; gap: 5px; }
+.recbar .rb-field > span:first-child { color: var(--muted); }
+.recbar .rb-radios { display: inline-flex; gap: 8px; align-items: center; }
+.recbar .rb-radios input { margin: 0 2px 0 0; }
+.recbar .rb-muted { color: var(--muted); }
 .recbar .rb-warn { color: #f0a050; }
 .recbar .rb-num { width: 4.5em; }
 .recbar select, .recbar input[type=number] {
   background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
-  border-radius: 4px; padding: 2px 4px; font: inherit;
+  border-radius: 4px; padding: 1px 3px; font: inherit;
 }
 .recbar .rb-actions { display: inline-flex; gap: 6px; margin-left: auto; }
 .recbar button, .recbar .rb-download {
   background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
-  border-radius: 5px; padding: 4px 10px; font: inherit; cursor: pointer; text-decoration: none;
+  border-radius: 5px; padding: 2px 9px; font: inherit; cursor: pointer; text-decoration: none;
 }
 .recbar button:hover:not(:disabled), .recbar .rb-download:hover { border-color: var(--accent); }
 .recbar button:disabled { opacity: 0.4; cursor: default; }
 .recbar .rb-primary { border-color: var(--accent); }
-.recbar progress { flex: 1; min-width: 120px; height: 10px; accent-color: #e0302a; }
+.recbar progress { flex: 1 1 auto; min-width: 120px; height: 10px; accent-color: #e0302a; }
 
 /* ---------------------------------------------------------------- periodic table */
 .ptable {
