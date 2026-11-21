@@ -14,6 +14,10 @@
 #error NUM_ORBITALS must be defined by the host (createProgram defines)
 #endif
 
+// Steps of the march along a ray that places an orbital's nearest detection
+// (colour mode "nearest" only; see nearestDepthRef).
+#define NEAREST_STEPS 48
+
 #define TWO_PI (6.28318530718)
 
 precision highp float;
@@ -32,6 +36,9 @@ uniform float uTableUMax;
 // Odd half-line moments for the cut-away view, same layout:
 // texel = (J1, J3, J5, 0), J_k = integral over t >= 0 only.
 uniform sampler2D uOddTables;
+// Radial factor q2(u) = R^2 / u^(2l) (reference units), same rows and u grid;
+// single channel. Used to march along a ray.
+uniform sampler2D uRadialTables;
 
 // Cut-away: 0 = whole ray; -1 = only the half behind the plane through the
 // nucleus parallel to the screen (t <= 0; view z points at the viewer),
@@ -42,12 +49,15 @@ uniform uint  uSeed;         // per-frame random seed
 uniform float uKMax;         // detections giving full brightness
 uniform float uGamma;        // tone curve: amount = (k / uKMax)^uGamma
 uniform int   uMode;         // 0 = dark background, 1 = white background
+uniform int   uColourMode;   // 0 = blend every orbital's detections;
+                             // 1 = only the orbital with the nearest detection
 
 // Occupied, visible orbitals, packed into the first uCount slots of a
 // uniform block (std140) in canonical order.
 struct Orbital {
   vec4 orb;    // (occupancy, kappa = Z/n, hue in [0,1), gain)
-  vec4 kind;   // (l, table row, chroma, unused)
+  vec4 kind;   // (l, table row, chroma, extent: radius (reference units)
+               //  beyond which the radial density is negligible)
   vec4 c0;     // angular coefficients (see js/orbitals.js angularCoefs):
   vec4 c1;     //  p: e.xyz; d: q00 q01 q02 q11 | q12 q22;
   vec4 c2;     //  f: c000 c001 c002 c011 | c012 c022 c111 c112 | c122 c222
@@ -68,7 +78,11 @@ out vec4 outColor;
 // ==========================================================================
 // 1. Physics
 vec4  momentAt(sampler2D tables, int row, float u);
+vec4  angularPoly(Orbital o, vec3 P, vec3 d);
 float columnRef(Orbital o, vec3 P, vec3 d);
+float radialAt(int row, float u);
+float rayDensityS(int row, vec4 A, float u2, float H, float s);
+float nearestDepthRef(Orbital o, vec3 P, vec3 d, int k, float massRef, float v, float tStop);
 // 2. Rendering helpers
 vec3  hsv2rgb(vec3 c);
 // 3. Numerical methods
@@ -89,18 +103,48 @@ void main() {
   vec2 chroma = vec2(0.0);
   float total = 0.0;
 
+  // Nearest detection so far (colour mode 1): depth t along d (Bohr; larger
+  // is nearer the viewer) and that orbital's tone-mapped amount and colour.
+  const float NONE = -1e30;
+  float nearT = NONE;
+  float nearSat = 0.0;
+  vec2 nearChroma = vec2(0.0);
+
   for (int i = 0; i < NUM_ORBITALS; i++) {
     if (i >= uCount) break;
     Orbital o = uOrbitals[i];
     vec4 orb = o.orb;
     float kappa = orb.y;
-    float col = kappa * kappa * columnRef(o, kappa * p, d);
+    vec3 P = kappa * p;                         // scaled ray: P + (kappa t) d
+    float colRef = columnRef(o, P, d);
+    float col = kappa * kappa * colRef;
     float lambda = orb.x * col * orb.w;
     int k = poisson(lambda, key, uint(i));      // stream = orbital slot (< 64)
     float sat = k > 0 ? min(1.0, pow(float(k) / uKMax, uGamma)) : 0.0;
     float h = orb.z * TWO_PI;
-    chroma += sat * o.kind.z * vec2(cos(h), sin(h));
+    vec2 c = sat * o.kind.z * vec2(cos(h), sin(h));
+    chroma += c;
     total += sat;
+
+    if (uColourMode == 1 && k > 0) {
+      // Where is this orbital's nearest detection? Its k detections are
+      // independent draws from its density along the ray, so the nearest
+      // sits at cumulative fraction 1 - v^(1/k) from the front (v uniform).
+      // The march stops early once it is behind the nearest found so far.
+      float v = u01(pcg4d(uvec4(key, (1u << 20) + uint(i))).x);  // own stream range
+      float massRef = uCut != 0.0 ? 0.5 * colRef : colRef;       // the marched part
+      float tRef = nearestDepthRef(o, P, d, k, massRef, v, nearT * kappa);
+      if (tRef / kappa > nearT) {
+        nearT = tRef / kappa;
+        nearSat = sat;
+        nearChroma = c;
+      }
+    }
+  }
+  if (uColourMode == 1) {
+    // Only the nearest orbital's detections are shown, in its own colour.
+    chroma = nearChroma;
+    total = nearSat;
   }
 
   // --- Rendering: tone curve per orbital, hue compositing, then RGB.
@@ -137,13 +181,40 @@ vec4 momentAt(sampler2D tables, int row, float u) {
              texelFetch(tables, ivec2(i + 1, row), 0), f);
 }
 
+// Angular amplitude along the scaled ray P + t d as a polynomial in t:
+// A(t) = c.x + c.y t + c.z t^2 + c.w t^3, with |psi|^2 = q2(r) A(t)^2.
+//  s: 1 / sqrt(4 pi)
+//  p: (e.P, e.d)
+//  d: (a, 2 beta, c),  a = PQP, beta = PQd, c = dQd
+//  f: (a0, a1, a2, a3), a0 = C(P,P,P), a1 = 3C(P,P,d), a2 = 3C(P,d,d), a3 = C(d,d,d)
+vec4 angularPoly(Orbital o, vec3 P, vec3 d) {
+  int l = int(o.kind.x + 0.5);
+  if (l == 0) return vec4(0.28209479177, 0.0, 0.0, 0.0);
+  if (l == 1) return vec4(dot(o.c0.xyz, P), dot(o.c0.xyz, d), 0.0, 0.0);
+  if (l == 2) {
+    mat3 Q = mat3(o.c0.x, o.c0.y, o.c0.z,
+                  o.c0.y, o.c0.w, o.c1.x,
+                  o.c0.z, o.c1.x, o.c1.y);
+    vec3 Qd = Q * d;
+    return vec4(dot(P, Q * P), 2.0 * dot(P, Qd), dot(d, Qd), 0.0);
+  }
+  // f: contract the cubic tensor once with P and once with d
+  //   C(a, b, c) = b . M(a) c,  M(a) = a.x Cx + a.y Cy + a.z Cz
+  mat3 Cx = mat3(o.c0.x, o.c0.y, o.c0.z,  o.c0.y, o.c0.w, o.c1.x,  o.c0.z, o.c1.x, o.c1.y);
+  mat3 Cy = mat3(o.c0.y, o.c0.w, o.c1.x,  o.c0.w, o.c1.z, o.c1.w,  o.c1.x, o.c1.w, o.c2.x);
+  mat3 Cz = mat3(o.c0.z, o.c1.x, o.c1.y,  o.c1.x, o.c1.w, o.c2.x,  o.c1.y, o.c2.x, o.c2.y);
+  mat3 MP = P.x * Cx + P.y * Cy + P.z * Cz;
+  mat3 Md = d.x * Cx + d.y * Cy + d.z * Cz;
+  vec3 MPd = MP * d;
+  return vec4(dot(P, MP * P), 3.0 * dot(P, MPd), 3.0 * dot(d, MPd), dot(d, Md * d));
+}
+
 // Column density in reference units (Z0 = n) for scaled closest point P.
-// Whole ray (even moments I, odd powers of t cancel):
+// Whole ray (even moments I, odd powers of t cancel), with angularPoly's terms:
 //  s: I0 / 4pi
 //  p: (e.P)^2 I0 + (e.d)^2 I2
-//  d: a^2 I0 + (4 beta^2 + 2 a c) I2 + c^2 I4,  a = PQP, beta = PQd, c = dQd
-//  f: a0^2 I0 + (a1^2 + 2 a0 a2) I2 + (a2^2 + 2 a1 a3) I4 + a3^2 I6,
-//     a0 = C(P,P,P), a1 = 3C(P,P,d), a2 = 3C(P,d,d), a3 = C(d,d,d)
+//  d: a^2 I0 + (4 beta^2 + 2 a c) I2 + c^2 I4
+//  f: a0^2 I0 + (a1^2 + 2 a0 a2) I2 + (a2^2 + 2 a1 a3) I4 + a3^2 I6
 // Cut-away adds 2 uCut times the odd terms (half-line moments J):
 //  s: 0
 //  p: 2 (e.P)(e.d) J1
@@ -156,18 +227,15 @@ float columnRef(Orbital o, vec3 P, vec3 d) {
   float u = length(P);
   vec4 m = momentAt(uTables, row, u);
   if (l == 0) return m.x * 0.0795774715459;   // 1 / (4 pi)
+  vec4 A = angularPoly(o, P, d);
   if (l == 1) {
-    float ep = dot(o.c0.xyz, P), ed = dot(o.c0.xyz, d);
+    float ep = A.x, ed = A.y;
     float col = ep * ep * m.x + ed * ed * m.y;
     if (uCut != 0.0) col += 2.0 * uCut * (2.0 * ep * ed * momentAt(uOddTables, row, u).x);
     return col;
   }
   if (l == 2) {
-    mat3 Q = mat3(o.c0.x, o.c0.y, o.c0.z,
-                  o.c0.y, o.c0.w, o.c1.x,
-                  o.c0.z, o.c1.x, o.c1.y);
-    vec3 Qd = Q * d;
-    float a = dot(P, Q * P), beta = dot(P, Qd), c = dot(d, Qd);
+    float a = A.x, beta = 0.5 * A.y, c = A.z;
     float col = a * a * m.x + (4.0 * beta * beta + 2.0 * a * c) * m.y + c * c * m.z;
     if (uCut != 0.0) {
       vec4 j = momentAt(uOddTables, row, u);
@@ -175,15 +243,7 @@ float columnRef(Orbital o, vec3 P, vec3 d) {
     }
     return col;
   }
-  // f: contract the cubic tensor once with P and once with d
-  //   C(a, b, c) = b . M(a) c,  M(a) = a.x Cx + a.y Cy + a.z Cz
-  mat3 Cx = mat3(o.c0.x, o.c0.y, o.c0.z,  o.c0.y, o.c0.w, o.c1.x,  o.c0.z, o.c1.x, o.c1.y);
-  mat3 Cy = mat3(o.c0.y, o.c0.w, o.c1.x,  o.c0.w, o.c1.z, o.c1.w,  o.c1.x, o.c1.w, o.c2.x);
-  mat3 Cz = mat3(o.c0.z, o.c1.x, o.c1.y,  o.c1.x, o.c1.w, o.c2.x,  o.c1.y, o.c2.x, o.c2.y);
-  mat3 MP = P.x * Cx + P.y * Cy + P.z * Cz;
-  mat3 Md = d.x * Cx + d.y * Cy + d.z * Cz;
-  vec3 MPd = MP * d;
-  float a0 = dot(P, MP * P), a1 = 3.0 * dot(P, MPd), a2 = 3.0 * dot(d, MPd), a3 = dot(d, Md * d);
+  float a0 = A.x, a1 = A.y, a2 = A.z, a3 = A.w;
   float col = a0 * a0 * m.x + (a1 * a1 + 2.0 * a0 * a2) * m.y +
               (a2 * a2 + 2.0 * a1 * a3) * m.z + a3 * a3 * m.w;
   if (uCut != 0.0) {
@@ -191,6 +251,64 @@ float columnRef(Orbital o, vec3 P, vec3 d) {
     col += 2.0 * uCut * (2.0 * a0 * a1 * j.x + 2.0 * (a0 * a3 + a1 * a2) * j.y + 2.0 * a2 * a3 * j.z);
   }
   return col;
+}
+
+// Radial factor q2 at u (manual lerp, 0 beyond the table).
+float radialAt(int row, float u) {
+  float x = u / uTableUMax * float(uTableN - 1);
+  if (x >= float(uTableN - 1)) return 0.0;
+  int i = int(x);
+  float f = x - float(i);
+  return mix(texelFetch(uRadialTables, ivec2(i, row), 0).r,
+             texelFetch(uRadialTables, ivec2(i + 1, row), 0).r, f);
+}
+
+// Density along the scaled ray per unit of the march variable s, where
+// t = H s^3 (dt/ds = 3 H s^2): q2(r) A(t)^2 dt/ds.
+float rayDensityS(int row, vec4 A, float u2, float H, float s) {
+  float t = H * s * s * s;
+  float a = A.x + t * (A.y + t * (A.z + t * A.w));
+  return radialAt(row, sqrt(u2 + t * t)) * a * a * 3.0 * H * s * s;
+}
+
+// Depth t (reference units along d; larger = nearer the viewer) of the
+// nearest of k detections of orbital o on the scaled ray P + t d. massRef is
+// the column of the part of the ray that is drawn (half of it when cut);
+// v is uniform in [0, 1).
+// The density is marched from the front (s = 1, or the cut plane s = 0) to
+// the back (s = -1) with the trapezoid rule in s, t = H s^3,
+// H = sqrt(extent^2 - |P|^2): the cubic packs the steps near the closest
+// point, where the narrow inner lobes of high-n orbitals lie. The march
+// stops when the cumulative mass reaches (1 - v^(1/k)) massRef; the crossing
+// is interpolated linearly in s. If the march gets behind tStop first, the
+// result cannot be the nearest overall: returns -1e30. Rays outside the
+// extent return 0 (the closest point).
+float nearestDepthRef(Orbital o, vec3 P, vec3 d, int k, float massRef, float v, float tStop) {
+  float u2 = dot(P, P);
+  float ext = o.kind.w;
+  if (u2 >= ext * ext) return 0.0;
+  float H = sqrt(ext * ext - u2);
+  float sHi = uCut != 0.0 ? 0.0 : 1.0;
+  float hs = (sHi + 1.0) / float(NEAREST_STEPS);
+  int row = int(o.kind.y + 0.5);
+  vec4 A = angularPoly(o, P, d);
+  float target = (1.0 - pow(v, 1.0 / float(k))) * massRef;
+
+  float fPrev = rayDensityS(row, A, u2, H, sHi);
+  float acc = 0.0;
+  for (int j = 1; j <= NEAREST_STEPS; j++) {
+    float s = sHi - float(j) * hs;
+    float f = rayDensityS(row, A, u2, H, s);
+    float seg = 0.5 * (fPrev + f) * hs;
+    if (acc + seg >= target) {
+      float sc = s + hs * (1.0 - (target - acc) / max(seg, 1e-30));
+      return H * sc * sc * sc;
+    }
+    acc += seg;
+    fPrev = f;
+    if (H * s * s * s < tStop) return -1e30;
+  }
+  return -H;    // short of the target by the quadrature error: the back end
 }
 
 // ==========================================================================

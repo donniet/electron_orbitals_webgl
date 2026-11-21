@@ -10,11 +10,18 @@ are tabulated in the scaled variable u = Z b / n (reference charge Z0 = n),
 
     J_k(u) = int_0^inf R(r)^2 t^k / r^(2l) dt,   k = 1, 3, 5
 
-used by the cut-away view. Output:
+used by the cut-away view, and the radial factor itself
 
-    data/orbital_tables.bin      float32 little-endian, [row][i][RGBA]
-    data/orbital_tables_odd.bin  same layout, odd moments
-    data/orbital_tables.json     metadata (N, uMax, rows, channels, odd)
+    q2(u) = R(u)^2 / u^(2l)
+
+with each row's extent (the radius holding all but RADIAL_TAIL of the
+electron), used to march along rays for the "nearest detection" colouring.
+Output:
+
+    data/orbital_tables.bin         float32 little-endian, [row][i][RGBA]
+    data/orbital_tables_odd.bin     same layout, odd moments
+    data/orbital_tables_radial.bin  float32 little-endian, [row][i], q2
+    data/orbital_tables.json        metadata (N, uMax, rows (+ extent), channels, odd, radial)
 
 Texels hold (I0, I2, I4, I6) and (J1, J3, J5, 0). tools/orbitals.py has the
 math that turns moments into column densities for s, p, d and f orbitals.
@@ -47,6 +54,8 @@ BIN_PATH = os.path.join(ROOT, "data", "orbital_tables.bin")
 META_PATH = os.path.join(ROOT, "data", "orbital_tables.json")
 ODD_NAME = "orbital_tables_odd.bin"
 ODD_PATH = os.path.join(ROOT, "data", ODD_NAME)
+RADIAL_PATH = os.path.join(ROOT, "data", "orbital_tables_radial.bin")
+RADIAL_TAIL = 1e-7    # probability beyond a row's extent
 
 
 def moments_at(u):
@@ -107,10 +116,36 @@ def _write_rgba(path, rows):
         arr.tofile(fh)
 
 
-def write_moment_tables(tables, odd, bin_path=BIN_PATH, meta_path=META_PATH, odd_path=ODD_PATH):
+def radial_q2_tables(n=M_N, u_max=M_U_MAX):
+    """q2[row][i] = R_ref(u)^2 / u^(2l) at u_i = i * u_max / (n - 1)."""
+    return [[r.R2_over_r2l(i * u_max / (n - 1)) for i in range(n)] for r in orb.RADIALS]
+
+
+def radial_extent(radial, tail=RADIAL_TAIL, u_max=M_U_MAX, steps=60000):
+    """Smallest u with int_u^inf u^2 R^2 du <= tail (reference units), capped at u_max."""
+    h = u_max / steps
+    acc = 0.0
+    prev = u_max * u_max * radial.R(u_max) ** 2
+    for i in range(steps - 1, -1, -1):
+        u = i * h
+        cur = u * u * radial.R(u) ** 2
+        acc += 0.5 * (prev + cur) * h
+        if acc > tail:
+            return u + h
+        prev = cur
+    return 0.0
+
+
+def write_moment_tables(tables, odd, bin_path=BIN_PATH, meta_path=META_PATH, odd_path=ODD_PATH,
+                        radial_path=RADIAL_PATH):
     n = len(tables[0])
     _write_rgba(bin_path, tables)
     _write_rgba(odd_path, odd)
+    arr = array.array("f", [v for row in radial_q2_tables(n) for v in row])
+    if sys.byteorder == "big":
+        arr.byteswap()
+    with open(radial_path, "wb") as fh:
+        arr.tofile(fh)
     meta = {
         "generator": "tools/gen_tables.py",
         "format": "float32 little-endian, layout [row][i][channel], RGBA texel per sample",
@@ -118,8 +153,11 @@ def write_moment_tables(tables, odd, bin_path=BIN_PATH, meta_path=META_PATH, odd
         "uMax": M_U_MAX,
         "channels": ["I0", "I2", "I4", "I6"],
         "odd": {"file": os.path.basename(odd_path), "channels": ["J1", "J3", "J5", "0"]},
-        "rows": [{"name": nm, "n": nn, "l": ll}
-                 for nm, (nn, ll) in zip(orb.ROW_NAMES, orb.RADIAL)],
+        "radial": {"file": os.path.basename(radial_path), "channels": ["q2"],
+                   "format": "float32 little-endian, layout [row][i], R^2 / u^(2l)",
+                   "tail": RADIAL_TAIL},
+        "rows": [{"name": nm, "n": nn, "l": ll, "extent": round(radial_extent(r), 3)}
+                 for nm, (nn, ll), r in zip(orb.ROW_NAMES, orb.RADIAL, orb.RADIALS)],
     }
     with open(meta_path, "w") as fh:
         json.dump(meta, fh, indent=2)
@@ -139,6 +177,19 @@ def load_moment_tables(bin_path=BIN_PATH, meta_path=META_PATH):
     tables = [[tuple(arr[(r * n + i) * 4 + c] for c in range(4))
                for i in range(n)] for r in range(rows)]
     return tables, meta
+
+
+def load_radial_tables(radial_path=RADIAL_PATH, meta_path=META_PATH):
+    """q2[row][i] as written by write_moment_tables."""
+    with open(meta_path) as fh:
+        meta = json.load(fh)
+    arr = array.array("f")
+    with open(radial_path, "rb") as fh:
+        arr.frombytes(fh.read())
+    if sys.byteorder == "big":
+        arr.byteswap()
+    n = meta["N"]
+    return [list(arr[r * n:(r + 1) * n]) for r in range(len(meta["rows"]))]
 
 
 def load_odd_tables(odd_path=ODD_PATH, meta_path=META_PATH):
@@ -315,7 +366,7 @@ def main(argv=None):
           f"u in [0, {M_U_MAX}] ...")
     tables, odd = build_moment_tables()
     write_moment_tables(tables, odd)
-    print(f"Wrote {BIN_PATH}, {ODD_PATH} and {META_PATH}")
+    print(f"Wrote {BIN_PATH}, {ODD_PATH}, {RADIAL_PATH} and {META_PATH}")
     for name, row, orow in zip(orb.ROW_NAMES, tables, odd):
         print(f"  {name}: I0(0)={row[0][0]:.6g}  I2(0)={row[0][1]:.6g}  "
               f"I4(0)={row[0][2]:.6g}  I6(0)={row[0][3]:.6g}  "

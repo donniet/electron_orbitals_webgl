@@ -82,6 +82,11 @@
       <label class="row" title="Show only the half of the electron cloud behind a plane through the nucleus, parallel to the screen (at double brightness). Rotate the atom to see its depth structure. (c)">
         <input type="checkbox" id="cut"> Cut away front half <span class="hint">(behind the nucleus)</span>
       </label>
+      <div class="row" title="Blend mixes the colours of every orbital detected along a line of sight. Nearest shows only the orbital whose detection is nearest to you, like an opaque surface (with the cut-away: the cloud just behind the cut). (n)">
+        <span>Colour</span>
+        <label><input type="radio" name="colourmode" value="blend"> Blend</label>
+        <label><input type="radio" name="colourmode" value="nearest"> Nearest</label>
+      </div>
       <label class="slider">
         <span>Counts for full brightness <output id="kmax-val"></output></span>
         <input id="kmax" type="range" min="1" max="20" step="0.5">
@@ -110,7 +115,7 @@
     </section>
 
     <footer>
-      <p>Drag to rotate · scroll to zoom · ←/→ change element · space pause · r reset · s save PNG · c cut away.
+      <p>Drag to rotate · scroll to zoom · ←/→ change element · space pause · r reset · s save PNG · c cut away · n nearest colour.
       Shift-click (or long-press) an element to compare it side by side.</p>
       <p>Hydrogen-like orbitals with Clementi–Raimondi Z<sub>eff</sub>; fixed orientation.</p>
       <p class="links">

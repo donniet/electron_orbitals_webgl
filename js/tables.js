@@ -2,8 +2,10 @@
 //   data/orbital_tables.json      metadata (N, uMax, rows, channels, odd)
 //   data/orbital_tables.bin       float32 little-endian, [row][i][RGBA]
 //   data/orbital_tables_odd.bin   same layout, odd half-line moments
+//   data/orbital_tables_radial.bin  float32, [row][i], q2 = R^2 / u^(2l)
 // Texels hold (I0, I2, I4, I6) and (J1, J3, J5, 0) of one radial function
-// at u = i * uMax / (N - 1).
+// at u = i * uMax / (N - 1); rows[r].extent is the radius (reference units)
+// beyond which row r's density is negligible.
 
 const DEFAULT_BASE = new URL('../data/', import.meta.url);
 
@@ -22,17 +24,21 @@ export async function loadTables(base = DEFAULT_BASE) {
       '(python3 -m http.server 8000).');
   }
   const meta = await metaRes.json();
-  if (!meta.odd) {
-    throw new Error('orbital_tables.json has no odd (cut-away) tables: it is out of date ' +
+  if (!meta.odd || !meta.radial) {
+    throw new Error('orbital_tables.json lacks the odd or radial tables: it is out of date ' +
       'or cached. Hard-reload the page, or run python3 tools/gen_tables.py.');
   }
   const expected = meta.rows.length * meta.N * 4;
   const data = toFloats(await binRes.arrayBuffer(), 'orbital_tables.bin', expected);
 
-  const oddRes = await fetch(new URL(meta.odd.file, base), FETCH_OPTS);
-  if (!oddRes.ok) throw new Error(`Could not load ${meta.odd.file} (${oddRes.status}).`);
-  const odd = toFloats(await oddRes.arrayBuffer(), meta.odd.file, expected);
-  return { N: meta.N, uMax: meta.uMax, rows: meta.rows, data, odd };
+  const [odd, radial] = await Promise.all([
+    [meta.odd.file, expected], [meta.radial.file, expected / 4],
+  ].map(async ([file, n]) => {
+    const res = await fetch(new URL(file, base), FETCH_OPTS);
+    if (!res.ok) throw new Error(`Could not load ${file} (${res.status}).`);
+    return toFloats(await res.arrayBuffer(), file, n);
+  }));
+  return { N: meta.N, uMax: meta.uMax, rows: meta.rows, data, odd, radial };
 }
 
 // Little-endian float32 file -> Float32Array of the expected length.

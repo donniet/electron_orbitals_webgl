@@ -133,6 +133,71 @@ export function columnRef(tables, orbital, P, d, cut = 0) {
   return cut ? even + 2 * cut * odd() : even;
 }
 
+// Angular amplitude along the scaled ray P + t d as a cubic in t:
+// A(t) = c[0] + c[1] t + c[2] t^2 + c[3] t^3, |psi|^2 = q2(r) A(t)^2.
+// Mirrors angularPoly() in the shader.
+export function angularPoly(orbital, P, d) {
+  if (orbital.l === 0) return [1 / Math.sqrt(4 * Math.PI), 0, 0, 0];
+  if (orbital.l === 1) return [dot3(orbital.e, P), dot3(orbital.e, d), 0, 0];
+  if (orbital.l === 2) {
+    const QP = mulQ(orbital.Q, P), Qd = mulQ(orbital.Q, d);
+    return [dot3(P, QP), 2 * dot3(P, Qd), dot3(d, Qd), 0];
+  }
+  return [cform(orbital.C, P, P, P), 3 * cform(orbital.C, P, P, d),
+          3 * cform(orbital.C, P, d, d), cform(orbital.C, d, d, d)];
+}
+
+// Radial factor q2(u) = R^2 / u^(2l) of table row `row` (linear interpolation,
+// 0 beyond the table). Mirrors radialAt() in the shader.
+export function radialLookup(tables, row, u) {
+  const { N, uMax, radial } = tables;
+  const x = (u / uMax) * (N - 1);
+  if (x >= N - 1) return 0;
+  const i = Math.floor(x);
+  const f = x - i;
+  return radial[row * N + i] * (1 - f) + radial[row * N + i + 1] * f;
+}
+
+export const NEAREST_STEPS = 48;
+export const NO_DEPTH = -1e30;
+
+// Depth (reference units along d, larger = nearer the viewer) of the nearest
+// of k detections of `orbital` on the scaled ray P + t d, by marching the
+// density from the front in s, t = H s^3; see nearestDepthRef() in the
+// shader, which this mirrors. massRef: column of the drawn part of the ray;
+// v uniform in [0, 1); cut: only t <= 0 is drawn; returns NO_DEPTH once
+// behind tStop.
+export function nearestDepthRef(tables, orbital, P, d, k, massRef, v, cut = false,
+                                tStop = NO_DEPTH, steps = NEAREST_STEPS) {
+  const u2 = dot3(P, P);
+  const ext = tables.rows[orbital.row].extent;
+  if (u2 >= ext * ext) return 0;
+  const H = Math.sqrt(ext * ext - u2);
+  const sHi = cut ? 0 : 1;
+  const hs = (sHi + 1) / steps;
+  const A = angularPoly(orbital, P, d);
+  const dens = s => {                       // q2(r) A(t)^2 dt/ds
+    const t = H * s * s * s;
+    const a = A[0] + t * (A[1] + t * (A[2] + t * A[3]));
+    return radialLookup(tables, orbital.row, Math.sqrt(u2 + t * t)) * a * a * 3 * H * s * s;
+  };
+  const target = (1 - Math.pow(v, 1 / k)) * massRef;
+  let fPrev = dens(sHi), acc = 0;
+  for (let j = 1; j <= steps; j++) {
+    const s = sHi - j * hs;
+    const f = dens(s);
+    const seg = 0.5 * (fPrev + f) * hs;
+    if (acc + seg >= target) {
+      const sc = s + hs * (1 - (target - acc) / Math.max(seg, 1e-30));
+      return H * sc * sc * sc;
+    }
+    acc += seg;
+    fPrev = f;
+    if (H * s * s * s < tStop) return NO_DEPTH;
+  }
+  return -H;
+}
+
 function cform(C, a, b, c) {
   let s = 0;
   for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) for (let k = 0; k < 3; k++) {

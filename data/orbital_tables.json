@@ -18,81 +18,104 @@
       "0"
     ]
   },
+  "radial": {
+    "file": "orbital_tables_radial.bin",
+    "channels": [
+      "q2"
+    ],
+    "format": "float32 little-endian, layout [row][i], R^2 / u^(2l)",
+    "tail": 1e-07
+  },
   "rows": [
     {
       "name": "1s",
       "n": 1,
-      "l": 0
+      "l": 0,
+      "extent": 10.835
     },
     {
       "name": "2s",
       "n": 2,
-      "l": 0
+      "l": 0,
+      "extent": 13.634
     },
     {
       "name": "3s",
       "n": 3,
-      "l": 0
+      "l": 0,
+      "extent": 16.278
     },
     {
       "name": "4s",
       "n": 4,
-      "l": 0
+      "l": 0,
+      "extent": 18.828
     },
     {
       "name": "2p",
       "n": 2,
-      "l": 1
+      "l": 1,
+      "extent": 13.078
     },
     {
       "name": "3p",
       "n": 3,
-      "l": 1
+      "l": 1,
+      "extent": 15.93
     },
     {
       "name": "4p",
       "n": 4,
-      "l": 1
+      "l": 1,
+      "extent": 18.572
     },
     {
       "name": "3d",
       "n": 3,
-      "l": 2
+      "l": 2,
+      "extent": 15.099
     },
     {
       "name": "5s",
       "n": 5,
-      "l": 0
+      "l": 0,
+      "extent": 21.312
     },
     {
       "name": "6s",
       "n": 6,
-      "l": 0
+      "l": 0,
+      "extent": 23.747
     },
     {
       "name": "5p",
       "n": 5,
-      "l": 1
+      "l": 1,
+      "extent": 21.109
     },
     {
       "name": "6p",
       "n": 6,
-      "l": 1
+      "l": 1,
+      "extent": 23.579
     },
     {
       "name": "4d",
       "n": 4,
-      "l": 2
+      "l": 2,
+      "extent": 18.012
     },
     {
       "name": "5d",
       "n": 5,
-      "l": 2
+      "l": 2,
+      "extent": 20.68
     },
     {
       "name": "4f",
       "n": 4,
-      "l": 3
+      "l": 3,
+      "extent": 16.988
     }
   ]
 }

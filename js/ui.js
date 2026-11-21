@@ -87,6 +87,9 @@ export function buildUI(app) {
   $('#equalize').addEventListener('change', e => app.setEqualize(e.target.checked));
   $('#fixed-scale').addEventListener('change', e => app.setFixedScale(e.target.checked));
   $('#cut').addEventListener('change', e => app.setCut(e.target.checked));
+  for (const r of document.querySelectorAll('input[name=colourmode]')) {
+    r.addEventListener('change', e => { if (e.target.checked) app.setColour(e.target.value); });
+  }
   for (const r of document.querySelectorAll('input[name=bgmode]')) {
     r.addEventListener('change', () => r.checked && app.setMode(r.value));
   }
@@ -113,6 +116,7 @@ export function buildUI(app) {
     else if (e.key === 'r') app.resetView();
     else if (e.key === 's') app.savePng();
     else if (e.key === 'c') app.setCut(!app.state.cut);
+    else if (e.key === 'n') app.setColour(app.state.colour === 'nearest' ? 'blend' : 'nearest');
     else if (e.key === 'Escape') { if (app.pickingSecond) app.togglePicking(); else app.clearSecond(); }
   });
 }
@@ -152,6 +156,7 @@ export function syncControls(state) {
   $('#exposure').title = state.equalize
     ? 'Peak expected detections per pixel = exposure x 20'
     : 'Mean detections per pixel per frame (if the whole atom were in view)';
+  for (const r of document.querySelectorAll('input[name=colourmode]')) r.checked = r.value === state.colour;
   for (const r of document.querySelectorAll('input[name=bgmode]')) r.checked = r.value === state.mode;
   for (const r of document.querySelectorAll('input[name=resmode]')) r.checked = r.value === state.resMode;
   $('#pause').textContent = state.paused ? 'Play' : 'Pause';

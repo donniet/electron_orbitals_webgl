@@ -22,7 +22,7 @@ static-y noise. Two atoms can be shown side by side (A/B comparison).
   python3 -m http.server 8000
   # app:    http://localhost:8000/
   # tests:  http://localhost:8000/tests/test.html
-  # bench:  http://localhost:8000/tests/bench.html?z=36,86
+  # bench:  http://localhost:8000/tests/bench.html?z=36,86   (also &colour=nearest, &cut=1)
   ```
 
   `http.server` lets browsers cache. After editing JS or `.glsl` files,
@@ -62,6 +62,14 @@ static-y noise. Two atoms can be shown side by side (A/B comparison).
   adds `2·uCut·(odd terms)` to the whole-ray column (uCut = −1: the half
   behind the plane, view z < 0, shown at double gain). It works only because
   the plane passes through the nucleus; a movable plane would need 2-D tables.
+- **Nearest colour** (`uColourMode` 1): per-orbital counts are unchanged; for
+  each orbital with k > 0 the nearest of its k detections sits at cumulative
+  fraction 1 − v^(1/k) from the front. `nearestDepthRef` finds it by marching
+  q2(r)·A(t)² (`data/orbital_tables_radial.bin`, q2 = R²/u^(2l); `angularPoly`
+  gives A) over the row's `extent`, with t = H·s³ to resolve the inner lobes
+  near the nucleus, and stops once behind the nearest so far. The pixel shows
+  only that orbital (its hue, chroma and tone-mapped count). Mirrored in
+  `js/math.js`.
 - **Ray geometry** lives in the vertex shader; the fragment shader starts at
   the physics. `gl_FragCoord` is used only for the random-number key.
 - **Randomness:** counter-based `pcg4d(x, y, frameSeed, stream)`; uniforms
@@ -119,6 +127,7 @@ google-chrome --headless=new --no-sandbox --use-angle=swiftshader \
   Look at them; check overlaps, clipping and both themes.
 - **Reproducible frames:** URL options `?z=26&debug=1&paused=1&spin=0&res=full`
   (also `z2=` for a second atom, `mode=white`, `equalize=1`, `scale=fixed`, `cut=1`,
+  `colour=nearest`,
   `density=`). Use these for **pixel-identical before/after comparisons** when a
   change should not alter output (refactors, file moves).
 - For numeric/visual claims (noise quality, alignment, performance), measure:

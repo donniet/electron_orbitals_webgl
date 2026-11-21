@@ -47,10 +47,13 @@ The server lets the browser cache files. If you edit the code, hard-reload
   scale), *Fixed scale* (the same zoom for every element, so sizes can be
   compared), *Cut away front half* (only the cloud behind a plane through the
   nucleus, parallel to the screen, at double brightness: rotate the atom to
-  see which lobes point toward or away from you), the tone curve, a dark or
-  white background, and noise resolution.
+  see which lobes point toward or away from you), *Colour: Blend / Nearest*
+  (Nearest shows each pixel only in the colour of the orbital whose detection
+  is nearest to you, like an opaque surface; with the cut-away this gives a
+  coloured cross-section), the tone curve, a dark or white background, and
+  noise resolution.
 - **Keys:** space pause · r reset view · s save PNG · c cut away ·
-  ←/→ element · Esc stop comparing.
+  n nearest colour · ←/→ element · Esc stop comparing.
 
 ### Reading the picture
 
@@ -77,6 +80,7 @@ for reproducible screenshots:
 | `equalize=1` | Equalize orbital brightness. |
 | `scale=fixed` | Same view scale for every element. |
 | `cut=1` | Cut away the front half of the cloud. |
+| `colour=nearest` | Colour by the nearest detection (default `blend`). |
 | `density=0.5` | Exposure. |
 | `kmax=4`, `gamma=0.5` | Tone curve: counts for full brightness, and gamma. |
 | `res=full` | Noise resolution: `auto` (default), `full` or `half`. |

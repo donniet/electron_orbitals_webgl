@@ -179,6 +179,30 @@ class TestOddClosedForms(unittest.TestCase):
             self.assertTrue(all(t[3] == 0.0 for t in row))
 
 
+class TestRadialTable(unittest.TestCase):
+    """q2 = R^2 / u^(2l) table and row extents (nearest-detection colouring)."""
+
+    def test_values_and_closed_forms(self):
+        q2 = gt.load_radial_tables()
+        n = META["N"]
+        self.assertEqual(len(q2), len(META["rows"]))
+        for r, rad in enumerate(orb.RADIALS):
+            for i in (0, 17, 300, 900):
+                u = i * gt.M_U_MAX / (n - 1)
+                self.assertAlmostEqual(q2[r][i], rad.R2_over_r2l(u),
+                                       delta=1e-6 * max(1.0, rad.R2_over_r2l(u)), msg=f"row {r} i {i}")
+        self.assertAlmostEqual(q2[orb.ROW_NAMES.index("1s")][0], 4.0, places=5)
+        self.assertAlmostEqual(q2[orb.ROW_NAMES.index("2p")][0], 4 / 3, places=5)
+
+    def test_extents_hold_all_but_the_tail(self):
+        for row, rad in zip(META["rows"], orb.RADIALS):
+            ext = row["extent"]
+            self.assertTrue(0 < ext <= gt.M_U_MAX, row)
+            tail = simpson(lambda u: u * u * rad.R(u) ** 2, ext, gt.M_U_MAX + 10, 4000)
+            self.assertLess(tail, 2 * META["radial"]["tail"], row["name"])
+            self.assertGreater(tail, 0.2 * META["radial"]["tail"], row["name"])
+
+
 class TestPlaneNormalisation(unittest.TestCase):
     """Each orbital integrated over the image plane holds one electron."""
 

@@ -138,6 +138,7 @@ export function createRenderer(canvas, tables) {
   const { prog, uniforms: u } = createProgram(gl, VERT, FRAG, { defines: SHADER_DEFINES });
   const tex = createTableTexture(gl, tables.data, tables.N, tables.rows.length);
   const oddTex = createTableTexture(gl, tables.odd, tables.N, tables.rows.length);
+  const radialTex = createTableTexture(gl, tables.radial, tables.N, tables.rows.length, { channels: 1 });
   createEmptyVAO(gl);
 
   gl.useProgram(prog);
@@ -147,6 +148,9 @@ export function createRenderer(canvas, tables) {
   gl.activeTexture(gl.TEXTURE1);
   gl.bindTexture(gl.TEXTURE_2D, oddTex);
   gl.uniform1i(u.uOddTables, 1);
+  gl.activeTexture(gl.TEXTURE2);
+  gl.bindTexture(gl.TEXTURE_2D, radialTex);
+  gl.uniform1i(u.uRadialTables, 2);
   gl.activeTexture(gl.TEXTURE0);
   gl.uniform1i(u.uTableN, tables.N);
   gl.uniform1f(u.uTableUMax, tables.uMax);
@@ -178,6 +182,8 @@ export function createRenderer(canvas, tables) {
    *               through the nucleus parallel to the screen (double gain),
    *   baseHalf  - optional animated base half-extent (see view.js),
    *   mode      - 'dark' | 'white',
+   *   colour    - 'blend' (every orbital's detections mixed) | 'nearest'
+   *               (only the orbital with the detection nearest the viewer),
    *   visible   - boolean per orbital
    * }
    */
@@ -213,7 +219,7 @@ export function createRenderer(canvas, tables) {
       blockData[b + 4] = l;
       blockData[b + 5] = row;
       blockData[b + 6] = orbitalChroma(o, el);
-      blockData[b + 7] = 0;
+      blockData[b + 7] = tables.rows[row].extent;
       blockData.set(coefs, b + 8);
     });
     gl.bindBuffer(gl.UNIFORM_BUFFER, ubo);
@@ -241,6 +247,7 @@ export function createRenderer(canvas, tables) {
     gl.uniform1f(u.uGamma, state.gamma);
     gl.uniform1i(u.uMode, state.mode === 'white' ? 1 : 0);
     gl.uniform1f(u.uCut, state.cut ? -1 : 0);              // every pane
+    gl.uniform1i(u.uColourMode, state.colour === 'nearest' ? 1 : 0);
 
     const geos = views.map(({ element: el, visible = ALL_VISIBLE, rect }) => {
       const bw = Math.ceil(rect.w / k), bh = Math.ceil(rect.h / k);

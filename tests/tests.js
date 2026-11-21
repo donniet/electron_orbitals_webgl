@@ -8,6 +8,7 @@ import { SUBSHELLS, orbitalIndex, orbitalsOf, isValence, angularCoefs, orbitalCh
 import {
   qAxisAngle, qMul, qToMat3, mat3MulVec, viewToAtom, mat3ToGL,
   meanR2, horizon, momentLookup, radialDensity, columnDensity, makeRng, poisson, pcg, hsvToRgb,
+  columnRef, angularPoly, radialLookup, nearestDepthRef, NO_DEPTH,
 } from '../js/math.js';
 import { createRenderer, viewGeometry, orbitalPeak, orbitalGains, MAX_VIEW_RADIUS, shapePeak, splitViews } from '../js/renderer.js';
 import { loadTables } from '../js/tables.js';
@@ -389,6 +390,80 @@ test('equalized gains give every occupied orbital the same peak lambda', () => {
   assert(phys.every(v => v === phys[0]), 'physical gains must be shared');
 });
 
+// ------------------------------------------------------------ nearest detection
+test('radial table: q2 at u = 0 matches closed forms; extents positive', () => {
+  const r1s = TABLES.rows.findIndex(r => r.name === '1s');
+  const r2p = TABLES.rows.findIndex(r => r.name === '2p');
+  near(radialLookup(TABLES, r1s, 0), 4, 1e-5);
+  near(radialLookup(TABLES, r2p, 0), 4 / 3, 1e-5);
+  assert(TABLES.rows.every(r => r.extent > 0 && r.extent <= TABLES.uMax), 'extents');
+});
+
+// Rays (scaled, reference units) for the march tests.
+function marchCases() {
+  const R = viewToAtom(qMul(qAxisAngle([1, 0, 0], 0.7), qAxisAngle([0, 1, 0], -0.9)));
+  const d = mat3MulVec(R, [0, 0, 1]);
+  const out = [];
+  ['1s', '4s', '2px', '5py', '3dxz', '3dz2', '5dxy', '4fxyz', '4fz3'].forEach(id => {
+    const o = ORBITALS[P(id)];
+    for (const [x, y] of [[0.05, 0.02], [0.9, -0.4], [-2.5, 1.8]]) {
+      out.push({ id, o, d, P: mat3MulVec(R, [x * o.n, y * o.n, 0]) });   // ~ shell-sized offsets
+    }
+  });
+  return out;
+}
+
+test('march: density along the ray integrates to the table column (whole and cut)', () => {
+  // Fine trapezoid of q2(r) A(t)^2 over the orbital's extent vs the moment tables.
+  for (const { id, o, d, P } of marchCases()) {
+    const ext = TABLES.rows[o.row].extent, u2 = P[0] ** 2 + P[1] ** 2 + P[2] ** 2;
+    if (u2 >= ext * ext) continue;
+    const H = Math.sqrt(ext * ext - u2), A = angularPoly(o, P, d), n = 4000;
+    const f = t => { const a = A[0] + t * (A[1] + t * (A[2] + t * A[3]));
+      return radialLookup(TABLES, o.row, Math.sqrt(u2 + t * t)) * a * a; };
+    let whole = 0, back = 0;
+    for (let j = 0; j < n; j++) {
+      const t0 = -H + (2 * H * j) / n, t1 = t0 + (2 * H) / n, seg = 0.5 * (f(t0) + f(t1)) * (t1 - t0);
+      whole += seg; if (t1 <= 1e-12) back += seg;
+    }
+    const col = columnRef(TABLES, o, P, d), colCut = columnRef(TABLES, o, P, d, -1) / 2;
+    near(whole, col, 2e-3 * col + 1e-7, `${id} whole`);
+    near(back, colCut, 2e-3 * col + 1e-7, `${id} back half`);
+  }
+});
+
+test('march: nearest depth with 48 steps matches a fine march', () => {
+  let worst = 0;
+  for (const { id, o, d, P } of marchCases()) {
+    const ext = TABLES.rows[o.row].extent;
+    for (const cut of [false, true]) {
+      const mass = cut ? columnRef(TABLES, o, P, d, -1) / 2 : columnRef(TABLES, o, P, d);
+      for (const k of [1, 4]) for (const v of [0.1, 0.5, 0.9]) {
+        const coarse = nearestDepthRef(TABLES, o, P, d, k, mass, v, cut);
+        const fine = nearestDepthRef(TABLES, o, P, d, k, mass, v, cut, NO_DEPTH, 20000);
+        worst = Math.max(worst, Math.abs(coarse - fine) / ext);
+        assert(!cut || coarse <= 1e-9, `${id}: cut depth must be behind the plane`);
+      }
+    }
+  }
+  // Measured worst 0.0115 of the extent (front tail, where the t = H s^3 steps
+  // are widest; ~0.2 reference units); the median is far smaller.
+  assert(worst < 0.02, `worst depth error ${worst.toFixed(4)} of the extent`);
+});
+
+test('march: nearest of k detections follows 1 - (1 - F)^k; stopping early is exact', () => {
+  // v = 1 - q^k puts the nearest at front fraction q... check the order statistic
+  // through the inverse: depth(k, v) == depth(1, v^(1/k)).
+  const { o, d, P } = marchCases()[7];
+  const mass = columnRef(TABLES, o, P, d);
+  for (const v of [0.2, 0.7]) {
+    near(nearestDepthRef(TABLES, o, P, d, 3, mass, v), nearestDepthRef(TABLES, o, P, d, 1, mass, Math.pow(v, 1 / 3)), 1e-9);
+    const t = nearestDepthRef(TABLES, o, P, d, 1, mass, v);
+    assert(nearestDepthRef(TABLES, o, P, d, 1, mass, v, false, t - 1e-6) === t, 'stop behind: same depth');
+    assert(nearestDepthRef(TABLES, o, P, d, 1, mass, v, false, t + 0.5) === NO_DEPTH, 'stop in front: no depth');
+  }
+});
+
 // ------------------------------------------------------------ GPU
 function renderFrame(z, opts = {}) {
   const canvas = document.createElement('canvas');
@@ -399,7 +474,7 @@ function renderFrame(z, opts = {}) {
     seed: opts.seed ?? 1, density: opts.density ?? 0.3,
     equalize: opts.equalize ?? false, kMax: opts.kMax ?? 4, gamma: opts.gamma ?? 0.5,
     mode: opts.mode || 'dark', visible: opts.visible || ORBITALS.map(() => true), fixedScale: opts.fixedScale ?? false,
-    cut: opts.cut ?? false,
+    cut: opts.cut ?? false, colour: opts.colour || 'blend',
   };
   r.render(state);
   const px = new Uint8Array(256 * 256 * 4);
@@ -718,6 +793,45 @@ test('GPU: cut-away applies to both panes', () => {
   }
   rend.gl.getExtension('WEBGL_lose_context')?.loseContext();
   shift.forEach((s, j) => assert(s > 2, `pane ${j} centroid shift ${s.toFixed(2)} px should be > 2`));
+});
+
+test('GPU: nearest colour shows the front lobe (neon 2px vs 2pz, tilted)', () => {
+  // Rotating +0.8 rad about view y: atom +x goes right and behind, atom +z
+  // right and in front, so on the right 2pz is nearer and on the left 2px.
+  // Their projections overlap, so blend mode mixes both on each side.
+  const q = qAxisAngle([0, 1, 0], 0.8);
+  const ix = P('2px'), iz = P('2pz');
+  const visible = ORBITALS.map((o, i) => i === ix || i === iz);
+  const hx = ORBITALS[ix].hue / 360, hz = ORBITALS[iz].hue / 360;
+  const hueOf = (r, g, b) => {
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    if (mx - mn < 40) return null;                       // grey / mixed
+    let h = mx === r ? (g - b) / (mx - mn) : mx === g ? 2 + (b - r) / (mx - mn) : 4 + (r - g) / (mx - mn);
+    return ((h / 6) % 1 + 1) % 1;
+  };
+  const hd = (a, b) => Math.min(Math.abs(a - b), 1 - Math.abs(a - b));
+  const share = colour => {     // fraction of 2pz-coloured pixels among classified ones, [left, right]
+    const n = [[0, 0], [0, 0]];
+    for (let s = 1; s <= 3; s++) {
+      const px = renderFrame(10, { seed: s, density: 2, q, visible, colour, kMax: 1, gamma: 1, equalize: true });
+      for (let y = 64; y < 192; y++) for (let x = 0; x < 256; x++) {
+        if (Math.abs(x - 128) < 12) continue;
+        const i = 4 * (y * 256 + x), h = hueOf(px[i], px[i + 1], px[i + 2]);
+        if (h === null) continue;
+        const side = x < 128 ? 0 : 1;
+        if (hd(h, hz) < 0.06) n[side][1]++; else if (hd(h, hx) < 0.06) n[side][0]++;
+      }
+    }
+    return n.map(([a, b]) => b / Math.max(1, a + b));
+  };
+  // Not 0 / 1: only orbitals detected in a pixel compete, and in the faint
+  // edges often just one is, whichever side it is on. Measured at this
+  // exposure: left 0.27, right 0.74 (0.21 / 0.80 at density 30).
+  const [l1, r1] = share('nearest');
+  assert(r1 > 0.65 && l1 < 0.35 && r1 - l1 > 0.35,
+    `nearest: 2pz share left ${l1.toFixed(2)} right ${r1.toFixed(2)}`);
+  const [l0, r0] = share('blend');
+  assert(Math.abs(l0 - r0) < 0.2, `blend should be symmetric: left ${l0.toFixed(2)} right ${r0.toFixed(2)}`);
 });
 
 test('GPU: white mode background is white', () => {
