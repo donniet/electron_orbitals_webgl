@@ -15,12 +15,13 @@ import gen_tables as gt  # noqa: E402
 import orbitals as orb  # noqa: E402
 
 TABLES, META = gt.load_moment_tables()
+ODD = gt.load_odd_tables()
 SHAPES = orb.all_shapes()
 BY_LABEL = {s.label: s for s in SHAPES}
 
 
 def moments(row):
-    return gt.moments_fn(TABLES, row)
+    return gt.moments_fn(TABLES, row, ODD)
 
 
 def simpson(f, a, b, n=4000):
@@ -161,6 +162,23 @@ class TestClosedForms(unittest.TestCase):
                 self.assertAlmostEqual(got, w, places=5, msg=name)
 
 
+class TestOddClosedForms(unittest.TestCase):
+    def test_b_zero(self):
+        # J_k(0) = int_0^inf R^2 t^k / t^(2l) dt; 1s: 4 e^{-2t}, 2p: (4/3) e^{-2t}
+        want = {"1s": (1, 1.5, 7.5), "2p": (1 / 3, 0.5, 2.5)}
+        for name, vals in want.items():
+            row = orb.ROW_NAMES.index(name)
+            for got, w in zip(ODD[row][0], vals):
+                self.assertAlmostEqual(got, w, places=5, msg=name)
+
+    def test_metadata_and_size(self):
+        self.assertEqual(META["odd"]["channels"], ["J1", "J3", "J5", "0"])
+        path = os.path.join(ROOT, "data", META["odd"]["file"])
+        self.assertEqual(os.path.getsize(path), len(META["rows"]) * META["N"] * 16)
+        for row in ODD:
+            self.assertTrue(all(t[3] == 0.0 for t in row))
+
+
 class TestPlaneNormalisation(unittest.TestCase):
     """Each orbital integrated over the image plane holds one electron."""
 
@@ -185,6 +203,32 @@ class TestPlaneNormalisation(unittest.TestCase):
             acc *= h * 2 * math.pi / nphi
             self.assertAlmostEqual(acc, 1.0, delta=2e-3, msg=s.label)
 
+    def test_cut_away_halves(self):
+        # The density is symmetric through the nucleus, so each half holds
+        # half an electron: the doubled cut-away column integrates to 1.
+        d = [0.48, 0.6, 0.64]
+        e1, e2 = gt._basis(d)
+        n = META["N"]
+        h = gt.M_U_MAX / (n - 1)
+        nphi = 24
+        for s in SHAPES:
+            if s.l == 0:
+                continue
+            mom = moments(s.row)
+            for cut in (-1, 1):
+                acc = 0.0
+                for i in range(0, n, 2):
+                    b = i * h
+                    w = 0.5 if i in (0, n - 1) else 1.0
+                    ring = 0.0
+                    for m in range(nphi):
+                        ph = 2 * math.pi * (m + 0.5) / nphi
+                        p = [b * (math.cos(ph) * e1[k] + math.sin(ph) * e2[k]) for k in range(3)]
+                        ring += s.column_ref(mom, p, d, cut)
+                    acc += w * ring * b
+                acc *= 2 * h * 2 * math.pi / nphi
+                self.assertAlmostEqual(acc, 1.0, delta=5e-3, msg=f"{s.label} cut={cut}")
+
 
 class TestBruteForceRays(unittest.TestCase):
     """Table formula == direct numerical line integral of |psi|^2."""
@@ -204,6 +248,28 @@ class TestBruteForceRays(unittest.TestCase):
                     scale = k * k * max(TABLES[s.row][0])  # typical magnitude
                     self.assertAlmostEqual(got, want, delta=2e-3 * max(want, 1e-2 * scale) + 1e-9,
                                            msg=f"{s.label} z={z} p={p} d={d}")
+
+    def test_random_half_rays_every_shape(self):
+        # Cut-away: twice the integral over the back half (t <= 0) / front half.
+        rng = random.Random(77)
+        for s in SHAPES:
+            if s.l == 0:
+                continue
+            z = 2.9
+            k = z / s.n
+            rms = math.sqrt(orb.mean_r2(s.n, s.l, z))
+            for _ in range(3):
+                p, d = random_ray(rng, 1.5 * rms)
+                tmax = 40.0 / k
+                f = lambda t: s.density(z, [p[i] + t * d[i] for i in range(3)])
+                back, front = simpson(f, -tmax, 0, 10000), simpson(f, 0, tmax, 10000)
+                scale = k * k * max(TABLES[s.row][0])
+                for cut, half in ((-1, back), (1, front)):
+                    want = 2 * half
+                    got = s.column(moments(s.row), z, p, d, cut)
+                    self.assertAlmostEqual(got, want, delta=2e-3 * max(want, 1e-2 * scale) + 1e-9,
+                                           msg=f"{s.label} cut={cut} p={p} d={d}")
+                self.assertGreater(abs(back - front), 0.0)
 
 
 class TestUnsold(unittest.TestCase):
@@ -236,6 +302,13 @@ class TestMonteCarlo(unittest.TestCase):
                                       ("4fz3", [0.36, 0.48, 0.8])]):
             err, _ = gt.mc_shape_check(TABLES, BY_LABEL[lab], d, n_samples=20000, seed=100 + i)
             self.assertLess(err, 0.012, lab)
+
+    def test_cut_away_quadrant_histograms(self):
+        for i, (lab, d, cut) in enumerate([("2px", [0.6, 0, 0.8], -1), ("3dz2", [0.36, 0.48, 0.8], 1),
+                                           ("4fxz2", [0.36, 0.48, 0.8], -1)]):
+            err, _ = gt.mc_shape_check(TABLES, BY_LABEL[lab], d, n_samples=20000, seed=200 + i,
+                                       odd=ODD, cut=cut)
+            self.assertLess(err, 0.012, f"{lab} cut={cut}")
 
 
 if __name__ == "__main__":

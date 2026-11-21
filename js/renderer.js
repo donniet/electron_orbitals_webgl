@@ -137,12 +137,17 @@ export function createRenderer(canvas, tables) {
   const gl = createContext(canvas);
   const { prog, uniforms: u } = createProgram(gl, VERT, FRAG, { defines: SHADER_DEFINES });
   const tex = createTableTexture(gl, tables.data, tables.N, tables.rows.length);
+  const oddTex = createTableTexture(gl, tables.odd, tables.N, tables.rows.length);
   createEmptyVAO(gl);
 
   gl.useProgram(prog);
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, tex);
   gl.uniform1i(u.uTables, 0);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, oddTex);
+  gl.uniform1i(u.uOddTables, 1);
+  gl.activeTexture(gl.TEXTURE0);
   gl.uniform1i(u.uTableN, tables.N);
   gl.uniform1f(u.uTableUMax, tables.uMax);
 
@@ -169,6 +174,8 @@ export function createRenderer(canvas, tables) {
    *   kMax      - detections giving full brightness,
    *   gamma     - tone curve exponent: amount = (k / kMax)^gamma,
    *   fixedScale - same view scale for every element (compare sizes),
+   *   cut       - cut-away: only the half of the cloud behind the plane
+   *               through the nucleus parallel to the screen (double gain),
    *   baseHalf  - optional animated base half-extent (see view.js),
    *   mode      - 'dark' | 'white',
    *   visible   - boolean per orbital
@@ -233,6 +240,7 @@ export function createRenderer(canvas, tables) {
     gl.uniform1f(u.uKMax, state.kMax);
     gl.uniform1f(u.uGamma, state.gamma);
     gl.uniform1i(u.uMode, state.mode === 'white' ? 1 : 0);
+    gl.uniform1f(u.uCut, state.cut ? -1 : 0);              // every pane
 
     const geos = views.map(({ element: el, visible = ALL_VISIBLE, rect }) => {
       const bw = Math.ceil(rect.w / k), bh = Math.ceil(rect.h / k);

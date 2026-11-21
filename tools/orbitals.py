@@ -31,6 +31,25 @@ Odd powers of t integrate to zero, so (reference units):
     f : col = a0^2 I_0 + (a1^2 + 2 a0 a2) I_2 + (a2^2 + 2 a1 a3) I_4 + a3^2 I_6
         a0 = C(p,p,p), a1 = 3C(p,p,d), a2 = 3C(p,d,d), a3 = C(d,d,d)
         (C the symmetric cubic tensor of the real l = 3 harmonic)
+
+Cut-away (only the half of the ray behind a plane through the nucleus)
+----------------------------------------------------------------------
+The density along the ray is (angular polynomial in t)^2 times R^2 / r^(2l),
+which is even in t, so splitting the ray at t = 0 needs the odd half-line
+moments too:
+
+    J_k(b) = integral_0^inf R(r)^2 t^k / r^(2l) dt,    k = 1, 3, 5
+
+With E the whole-ray column above and O the odd terms
+
+    s : O = 0
+    p : O = 2 (e.p)(e.d) J_1
+    d : O = 4 a beta J_1 + 4 beta c J_3
+    f : O = 2 a0 a1 J_1 + 2 (a0 a3 + a1 a2) J_3 + 2 a2 a3 J_5
+
+the half t <= 0 holds E/2 - O and the half t >= 0 holds E/2 + O. The renderer
+shows the back half at double gain: col = E + 2 cut O with cut = -1 (view z
+points toward the viewer, so t <= 0 is behind the plane).
 """
 import itertools
 import math
@@ -234,31 +253,42 @@ class Shape:
         k = z / self.n
         return k ** 3 * self.density_ref([k * c for c in x])
 
-    def column_ref(self, moments, p, d):
-        """Column density in reference units given moments(k, b) -> I_k(b)."""
+    def column_ref(self, moments, p, d, cut=0):
+        """Column density in reference units given moments(k, b): I_k(b) for
+        even k, J_k(b) for odd k (needed only when cut != 0).
+
+        cut = 0: whole ray; cut = -1 / +1: twice the half behind / in front
+        of the plane through the nucleus (E + 2 cut O, see the module docs).
+        """
         b = math.sqrt(dot(p, p))
         if self.l == 0:
             return moments(0, b) / (4 * math.pi)
         if self.l == 1:
             ep, ed = dot(self.e, p), dot(self.e, d)
-            return ep * ep * moments(0, b) + ed * ed * moments(2, b)
-        if self.l == 2:
+            even = ep * ep * moments(0, b) + ed * ed * moments(2, b)
+            odd = (lambda: 2 * ep * ed * moments(1, b))
+        elif self.l == 2:
             a = qform(self.Q, p, p)
             beta = qform(self.Q, p, d)
             c = qform(self.Q, d, d)
-            return (a * a * moments(0, b) + (4 * beta * beta + 2 * a * c) * moments(2, b)
+            even = (a * a * moments(0, b) + (4 * beta * beta + 2 * a * c) * moments(2, b)
                     + c * c * moments(4, b))
-        # f: C(P + t d)^3 = a0 + a1 t + a2 t^2 + a3 t^3
-        a0 = cform(self.C, p, p, p)
-        a1 = 3 * cform(self.C, p, p, d)
-        a2 = 3 * cform(self.C, p, d, d)
-        a3 = cform(self.C, d, d, d)
-        return (a0 * a0 * moments(0, b) + (a1 * a1 + 2 * a0 * a2) * moments(2, b)
-                + (a2 * a2 + 2 * a1 * a3) * moments(4, b) + a3 * a3 * moments(6, b))
+            odd = (lambda: 4 * a * beta * moments(1, b) + 4 * beta * c * moments(3, b))
+        else:
+            # f: C(P + t d)^3 = a0 + a1 t + a2 t^2 + a3 t^3
+            a0 = cform(self.C, p, p, p)
+            a1 = 3 * cform(self.C, p, p, d)
+            a2 = 3 * cform(self.C, p, d, d)
+            a3 = cform(self.C, d, d, d)
+            even = (a0 * a0 * moments(0, b) + (a1 * a1 + 2 * a0 * a2) * moments(2, b)
+                    + (a2 * a2 + 2 * a1 * a3) * moments(4, b) + a3 * a3 * moments(6, b))
+            odd = (lambda: 2 * a0 * a1 * moments(1, b) + 2 * (a0 * a3 + a1 * a2) * moments(3, b)
+                   + 2 * a2 * a3 * moments(5, b))
+        return even + 2 * cut * odd() if cut else even
 
-    def column(self, moments, z, p, d):
+    def column(self, moments, z, p, d, cut=0):
         k = z / self.n
-        return k * k * self.column_ref(moments, [k * c for c in p], d)
+        return k * k * self.column_ref(moments, [k * c for c in p], d, cut)
 
 
 def all_shapes():

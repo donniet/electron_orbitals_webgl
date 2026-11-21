@@ -86,14 +86,16 @@ export function horizon(element, orbitals) {
 
 // ------------------------------------------------------------ tables
 // Linear interpolation of moment I_k (k = 0, 2, 4, 6) of table row `row` at
-// scaled impact parameter u. Mirrors momentAt() in the fragment shader.
+// scaled impact parameter u, or of the odd half-line moment J_k (k = 1, 3, 5).
+// Mirrors momentAt() in the fragment shader.
 export function momentLookup(tables, row, k, u) {
-  const { N, uMax, data } = tables;
+  const { N, uMax } = tables;
+  const data = k % 2 === 0 ? tables.data : tables.odd;
   const x = (u / uMax) * (N - 1);
   if (x >= N - 1) return 0;
   const i = Math.floor(x);
   const f = x - i;
-  const base = (row * N + i) * 4 + k / 2;
+  const base = (row * N + i) * 4 + (k >> 1);
   return data[base] * (1 - f) + data[base + 4] * f;
 }
 
@@ -103,25 +105,32 @@ function mulQ(Q, v) {
 }
 
 // Column density in reference units (Z0 = n) for scaled closest point P
-// and unit direction d. Mirrors the shader.
-export function columnRef(tables, orbital, P, d) {
+// and unit direction d. Mirrors the shader. cut = 0: whole ray; cut = -1 / +1:
+// twice the half of the ray behind / in front of the plane through the
+// nucleus (t <= 0 / t >= 0), i.e. even terms + 2 cut * odd terms.
+export function columnRef(tables, orbital, P, d, cut = 0) {
   const u = Math.hypot(P[0], P[1], P[2]);
-  const I = k => momentLookup(tables, orbital.row, k, u);
+  const I = k => momentLookup(tables, orbital.row, k, u);   // odd k: J_k
   if (orbital.l === 0) return I(0) / (4 * Math.PI);
+  let even, odd;
   if (orbital.l === 1) {
     const ep = dot3(orbital.e, P), ed = dot3(orbital.e, d);
-    return ep * ep * I(0) + ed * ed * I(2);
-  }
-  if (orbital.l === 2) {
+    even = ep * ep * I(0) + ed * ed * I(2);
+    odd = () => 2 * ep * ed * I(1);
+  } else if (orbital.l === 2) {
     const QP = mulQ(orbital.Q, P), Qd = mulQ(orbital.Q, d);
     const a = dot3(P, QP), beta = dot3(P, Qd), c = dot3(d, Qd);
-    return a * a * I(0) + (4 * beta * beta + 2 * a * c) * I(2) + c * c * I(4);
+    even = a * a * I(0) + (4 * beta * beta + 2 * a * c) * I(2) + c * c * I(4);
+    odd = () => 4 * a * beta * I(1) + 4 * beta * c * I(3);
+  } else {
+    // f: C(P + t d)^3 = a0 + a1 t + a2 t^2 + a3 t^3
+    const a0 = cform(orbital.C, P, P, P), a1 = 3 * cform(orbital.C, P, P, d);
+    const a2 = 3 * cform(orbital.C, P, d, d), a3 = cform(orbital.C, d, d, d);
+    even = a0 * a0 * I(0) + (a1 * a1 + 2 * a0 * a2) * I(2) +
+           (a2 * a2 + 2 * a1 * a3) * I(4) + a3 * a3 * I(6);
+    odd = () => 2 * a0 * a1 * I(1) + 2 * (a0 * a3 + a1 * a2) * I(3) + 2 * a2 * a3 * I(5);
   }
-  // f: C(P + t d)^3 = a0 + a1 t + a2 t^2 + a3 t^3
-  const a0 = cform(orbital.C, P, P, P), a1 = 3 * cform(orbital.C, P, P, d);
-  const a2 = 3 * cform(orbital.C, P, d, d), a3 = cform(orbital.C, d, d, d);
-  return a0 * a0 * I(0) + (a1 * a1 + 2 * a0 * a2) * I(2) +
-         (a2 * a2 + 2 * a1 * a3) * I(4) + a3 * a3 * I(6);
+  return cut ? even + 2 * cut * odd() : even;
 }
 
 function cform(C, a, b, c) {
@@ -134,9 +143,9 @@ function cform(C, a, b, c) {
 
 // Column density (per electron in the orbital, 1 / Bohr^2) along the ray
 // with closest point p (atom frame, p.d = 0) and unit direction d.
-export function columnDensity(tables, orbital, zeff, p, d) {
+export function columnDensity(tables, orbital, zeff, p, d, cut = 0) {
   const k = zeff / orbital.n;
-  return k * k * columnRef(tables, orbital, [k * p[0], k * p[1], k * p[2]], d);
+  return k * k * columnRef(tables, orbital, [k * p[0], k * p[1], k * p[2]], d, cut);
 }
 
 // ------------------------------------------------------------ random

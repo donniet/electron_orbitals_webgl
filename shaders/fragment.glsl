@@ -2,7 +2,7 @@
 // Fragment shader: per-pixel Poisson detections from orbital column densities.
 //
 // Layout (read top to bottom in order of importance):
-//   Inputs                 uniforms, the per-orbital uniform block, the pixel's ray
+//   Inputs                 uniforms (incl. the cut-away), the per-orbital uniform block, the pixel's ray
 //   main()                 physics per pixel, then rendering to RGB
 //   1. Physics             orbital column densities from the moment tables
 //   2. Rendering helpers   colour conversion
@@ -29,6 +29,14 @@ precision highp sampler2D;
 uniform sampler2D uTables;
 uniform int   uTableN;
 uniform float uTableUMax;
+// Odd half-line moments for the cut-away view, same layout:
+// texel = (J1, J3, J5, 0), J_k = integral over t >= 0 only.
+uniform sampler2D uOddTables;
+
+// Cut-away: 0 = whole ray; -1 = only the half behind the plane through the
+// nucleus parallel to the screen (t <= 0; view z points at the viewer),
+// at double gain so front/back-symmetric parts keep their brightness.
+uniform float uCut;
 
 uniform uint  uSeed;         // per-frame random seed
 uniform float uKMax;         // detections giving full brightness
@@ -59,7 +67,7 @@ out vec4 outColor;
 // Forward declarations (definitions follow main)
 // ==========================================================================
 // 1. Physics
-vec4  momentAt(int row, float u);
+vec4  momentAt(sampler2D tables, int row, float u);
 float columnRef(Orbital o, vec3 P, vec3 d);
 // 2. Rendering helpers
 vec3  hsv2rgb(vec3 c);
@@ -120,28 +128,39 @@ void main() {
 // 1. Physics: orbital column densities
 // ==========================================================================
 // Manual linear interpolation (float textures need not be filterable).
-vec4 momentAt(int row, float u) {
+vec4 momentAt(sampler2D tables, int row, float u) {
   float x = u / uTableUMax * float(uTableN - 1);
   if (x >= float(uTableN - 1)) return vec4(0.0);
   int i = int(x);
   float f = x - float(i);
-  return mix(texelFetch(uTables, ivec2(i, row), 0),
-             texelFetch(uTables, ivec2(i + 1, row), 0), f);
+  return mix(texelFetch(tables, ivec2(i, row), 0),
+             texelFetch(tables, ivec2(i + 1, row), 0), f);
 }
 
 // Column density in reference units (Z0 = n) for scaled closest point P.
+// Whole ray (even moments I, odd powers of t cancel):
 //  s: I0 / 4pi
 //  p: (e.P)^2 I0 + (e.d)^2 I2
 //  d: a^2 I0 + (4 beta^2 + 2 a c) I2 + c^2 I4,  a = PQP, beta = PQd, c = dQd
 //  f: a0^2 I0 + (a1^2 + 2 a0 a2) I2 + (a2^2 + 2 a1 a3) I4 + a3^2 I6,
 //     a0 = C(P,P,P), a1 = 3C(P,P,d), a2 = 3C(P,d,d), a3 = C(d,d,d)
+// Cut-away adds 2 uCut times the odd terms (half-line moments J):
+//  s: 0
+//  p: 2 (e.P)(e.d) J1
+//  d: 4 a beta J1 + 4 beta c J3
+//  f: 2 a0 a1 J1 + 2 (a0 a3 + a1 a2) J3 + 2 a2 a3 J5
+// (whole = E; half behind = E/2 - O; shown at double gain: E - 2 O).
 float columnRef(Orbital o, vec3 P, vec3 d) {
   int l = int(o.kind.x + 0.5);
-  vec4 m = momentAt(int(o.kind.y + 0.5), length(P));
+  int row = int(o.kind.y + 0.5);
+  float u = length(P);
+  vec4 m = momentAt(uTables, row, u);
   if (l == 0) return m.x * 0.0795774715459;   // 1 / (4 pi)
   if (l == 1) {
     float ep = dot(o.c0.xyz, P), ed = dot(o.c0.xyz, d);
-    return ep * ep * m.x + ed * ed * m.y;
+    float col = ep * ep * m.x + ed * ed * m.y;
+    if (uCut != 0.0) col += 2.0 * uCut * (2.0 * ep * ed * momentAt(uOddTables, row, u).x);
+    return col;
   }
   if (l == 2) {
     mat3 Q = mat3(o.c0.x, o.c0.y, o.c0.z,
@@ -149,7 +168,12 @@ float columnRef(Orbital o, vec3 P, vec3 d) {
                   o.c0.z, o.c1.x, o.c1.y);
     vec3 Qd = Q * d;
     float a = dot(P, Q * P), beta = dot(P, Qd), c = dot(d, Qd);
-    return a * a * m.x + (4.0 * beta * beta + 2.0 * a * c) * m.y + c * c * m.z;
+    float col = a * a * m.x + (4.0 * beta * beta + 2.0 * a * c) * m.y + c * c * m.z;
+    if (uCut != 0.0) {
+      vec4 j = momentAt(uOddTables, row, u);
+      col += 2.0 * uCut * (4.0 * a * beta * j.x + 4.0 * beta * c * j.y);
+    }
+    return col;
   }
   // f: contract the cubic tensor once with P and once with d
   //   C(a, b, c) = b . M(a) c,  M(a) = a.x Cx + a.y Cy + a.z Cz
@@ -160,8 +184,13 @@ float columnRef(Orbital o, vec3 P, vec3 d) {
   mat3 Md = d.x * Cx + d.y * Cy + d.z * Cz;
   vec3 MPd = MP * d;
   float a0 = dot(P, MP * P), a1 = 3.0 * dot(P, MPd), a2 = 3.0 * dot(d, MPd), a3 = dot(d, Md * d);
-  return a0 * a0 * m.x + (a1 * a1 + 2.0 * a0 * a2) * m.y +
-         (a2 * a2 + 2.0 * a1 * a3) * m.z + a3 * a3 * m.w;
+  float col = a0 * a0 * m.x + (a1 * a1 + 2.0 * a0 * a2) * m.y +
+              (a2 * a2 + 2.0 * a1 * a3) * m.z + a3 * a3 * m.w;
+  if (uCut != 0.0) {
+    vec4 j = momentAt(uOddTables, row, u);
+    col += 2.0 * uCut * (2.0 * a0 * a1 * j.x + 2.0 * (a0 * a3 + a1 * a2) * j.y + 2.0 * a2 * a3 * j.z);
+  }
+  return col;
 }
 
 // ==========================================================================

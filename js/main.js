@@ -9,6 +9,7 @@
 //   ?density=0.2  exposure (mean detections per pixel; peak/20 if equalized)
 //   ?equalize=1   equalize orbital brightness (default: true relative densities)
 //   ?scale=fixed  same view scale for every element (compare sizes)
+//   ?cut=1        cut-away: show only the half of the cloud behind the nucleus
 //   ?spin=0       start without the slow default rotation
 //   ?res=full     noise canvas resolution: auto (default) | full | half
 //   ?kmax=4       counts for full brightness
@@ -46,6 +47,7 @@ const state = {
   density: +params.get('density') || 1,
   equalize: params.get('equalize') === '1',
   fixedScale: params.get('scale') === 'fixed',
+  cut: params.get('cut') === '1',  // cut-away: only the cloud behind the nucleus
   radialMode: 'auto',            // 'auto' | 'shell' | 'subshell'
   spin: defaultSpin(),           // { axis, rate } in view space, or null
   kMax: +params.get('kmax') || 4,
@@ -173,6 +175,7 @@ const app = {
   setGamma(g) { state.gamma = g; syncControls(state); dirty = true; },
   setEqualize(b) { state.equalize = b; syncControls(state); dirty = true; },
   setFixedScale(b) { state.fixedScale = b; syncControls(state); dirty = true; },
+  setCut(b) { state.cut = b; syncControls(state); dirty = true; },
   setRadialMode(m) { state.radialMode = m; radialKey = ''; syncRadialButtons(); dirty = true; },
   setMode(m) { state.mode = m; syncControls(state); dirty = true; },
   setPaused(p) { state.paused = p; syncControls(state); },

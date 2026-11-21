@@ -259,6 +259,35 @@ test('moment tables at u = 0 match closed forms', () => {
   assert(momentLookup(TABLES, r1s, 0, 1e6) === 0, 'lookup past uMax must be 0');
 });
 
+test('odd half-line moments at u = 0 match closed forms', () => {
+  // J_k(0) = int_0^inf R^2 t^k / t^(2l) dt
+  const r1s = TABLES.rows.findIndex(r => r.name === '1s');
+  const r2p = TABLES.rows.findIndex(r => r.name === '2p');
+  [1, 1.5, 7.5].forEach((v, j) => near(momentLookup(TABLES, r1s, 2 * j + 1, 0), v, 1e-5));
+  [1 / 3, 0.5, 2.5].forEach((v, j) => near(momentLookup(TABLES, r2p, 2 * j + 1, 0), v, 1e-5));
+});
+
+test('cut-away columns: back(p) = front(-p), back + front = 2 whole, s unchanged', () => {
+  const R = viewToAtom(qMul(qAxisAngle([1, 0, 0], 0.7), qAxisAngle([0, 1, 0], -0.9)));
+  const d = mat3MulVec(R, [0, 0, 1]);
+  let asym = 0;
+  ['1s', '2px', '3dxz', '3dz2', '4fxyz', '4fz3', '5py'].forEach(id => {
+    const o = ORBITALS[P(id)];
+    for (const [x, y] of [[0.4, 0.1], [-0.3, 0.8], [1.1, -0.6]]) {
+      const p = mat3MulVec(R, [x, y, 0]), mp = p.map(c => -c);
+      const whole = columnDensity(TABLES, o, o.n, p, d);
+      const back = columnDensity(TABLES, o, o.n, p, d, -1);
+      const front = columnDensity(TABLES, o, o.n, p, d, 1);
+      const tol = 1e-5 * Math.max(1, whole);
+      near(back, columnDensity(TABLES, o, o.n, mp, d, 1), tol, `${id} back(p) vs front(-p)`);
+      near(back + front, 2 * whole, tol, `${id} back + front`);
+      if (o.l === 0) near(back, whole, tol, `${id} s orbital unchanged by the cut`);
+      asym = Math.max(asym, Math.abs(back - front) / whole);
+    }
+  });
+  assert(asym > 0.1, `cut should change tilted p/d/f columns (max rel. change ${asym})`);
+});
+
 test('radialDensity (general n, l) normalised with correct <r^2>', () => {
   for (const sh of SUBSHELLS) {
     for (const z of [1, 3.3]) {
@@ -370,6 +399,7 @@ function renderFrame(z, opts = {}) {
     seed: opts.seed ?? 1, density: opts.density ?? 0.3,
     equalize: opts.equalize ?? false, kMax: opts.kMax ?? 4, gamma: opts.gamma ?? 0.5,
     mode: opts.mode || 'dark', visible: opts.visible || ORBITALS.map(() => true), fixedScale: opts.fixedScale ?? false,
+    cut: opts.cut ?? false,
   };
   r.render(state);
   const px = new Uint8Array(256 * 256 * 4);
@@ -636,6 +666,58 @@ test('GPU: two atoms side by side are each centred in their own pane', () => {
       near(sy / sw, rc.y + rc.h / 2, 3, `pane ${j} centroid y (k=${k})`);
     });
   }
+});
+
+test('GPU: cut-away keeps the lobe behind the nucleus (boron 2px tilted away on the right)', () => {
+  // Rotating +0.8 rad about view y takes atom +x to view (cos, 0, -sin):
+  // right of centre and behind the plane (view z points at the viewer).
+  const q = qAxisAngle([0, 1, 0], 0.8);
+  const visible = ORBITALS.map((o, i) => i === P('2px'));
+  const g = viewGeometry(ELEMENTS[4], 256, 256, 1);
+  const r = Math.round(Math.cos(0.8) * 2.0 / ELEMENTS[4].zeff[P('2px')] / g.bohrPerPixel);
+  const sides = cut => {
+    let right = 0, left = 0;
+    for (let s = 1; s <= 4; s++) {
+      const px = renderFrame(5, { seed: s, density: 1, q, visible, cut });
+      for (let o = -8; o <= 8; o++) for (let t = -8; t <= 8; t++) {
+        right += brightness(px, 128 + r + o, 128 + t);
+        left += brightness(px, 128 - r + o, 128 + t);
+      }
+    }
+    return [right, left];
+  };
+  const [r0, l0] = sides(false), [r1, l1] = sides(true);
+  assert(r0 < 1.3 * l0 && l0 < 1.3 * r0, `uncut lobes should match: right ${r0} left ${l0}`);
+  assert(r1 > 3 * l1, `cut: right (behind) ${r1} should dominate left (in front) ${l1}`);
+});
+
+test('GPU: cut-away applies to both panes', () => {
+  // Boron tilted as above: with the cut each pane's brightness centroid moves
+  // right of its centre (the 2px lobe behind the nucleus); 1s/2s stay centred.
+  const W = 320, H = 160;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const rend = createRenderer(canvas, TABLES);
+  const rects = splitViews(W, H, 1, 2);
+  const state = { element: ELEMENTS[4], orientation: qAxisAngle([0, 1, 0], 0.8), zoom: 1, seed: 5,
+    density: 3, equalize: true, kMax: 1, gamma: 1, mode: 'dark', fixedScale: false, cut: true };
+  const shift = [0, 0];
+  for (let seed = 1; seed <= 3; seed++) {
+    state.seed = seed;
+    rend.renderViews(state, 1, rects.map(rect => ({ element: ELEMENTS[4], rect })));
+    const px = new Uint8Array(W * H * 4);
+    rend.gl.readPixels(0, 0, W, H, rend.gl.RGBA, rend.gl.UNSIGNED_BYTE, px);
+    rects.forEach((rc, j) => {
+      let sx = 0, sw = 0;
+      for (let y = rc.y; y < rc.y + rc.h; y++) for (let x = rc.x; x < rc.x + rc.w; x++) {
+        const i = 4 * (y * W + x), v = px[i] + px[i + 1] + px[i + 2];
+        sx += v * (x + 0.5); sw += v;
+      }
+      shift[j] += (sx / sw - (rc.x + rc.w / 2)) / 3;
+    });
+  }
+  rend.gl.getExtension('WEBGL_lose_context')?.loseContext();
+  shift.forEach((s, j) => assert(s > 2, `pane ${j} centroid shift ${s.toFixed(2)} px should be > 2`));
 });
 
 test('GPU: white mode background is white', () => {

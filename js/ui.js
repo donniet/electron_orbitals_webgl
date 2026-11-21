@@ -86,6 +86,7 @@ export function buildUI(app) {
   gamma.addEventListener('input', () => app.setGamma(+gamma.value));
   $('#equalize').addEventListener('change', e => app.setEqualize(e.target.checked));
   $('#fixed-scale').addEventListener('change', e => app.setFixedScale(e.target.checked));
+  $('#cut').addEventListener('change', e => app.setCut(e.target.checked));
   for (const r of document.querySelectorAll('input[name=bgmode]')) {
     r.addEventListener('change', () => r.checked && app.setMode(r.value));
   }
@@ -111,6 +112,7 @@ export function buildUI(app) {
     else if (e.key === ' ') { e.preventDefault(); app.setPaused(!app.state.paused); }
     else if (e.key === 'r') app.resetView();
     else if (e.key === 's') app.savePng();
+    else if (e.key === 'c') app.setCut(!app.state.cut);
     else if (e.key === 'Escape') { if (app.pickingSecond) app.togglePicking(); else app.clearSecond(); }
   });
 }
@@ -146,6 +148,7 @@ export function syncControls(state) {
   $('#gamma-val').textContent = state.gamma.toFixed(2);
   $('#equalize').checked = state.equalize;
   $('#fixed-scale').checked = state.fixedScale;
+  $('#cut').checked = state.cut;
   $('#exposure').title = state.equalize
     ? 'Peak expected detections per pixel = exposure x 20'
     : 'Mean detections per pixel per frame (if the whole atom were in view)';

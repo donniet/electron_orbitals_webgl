@@ -9,6 +9,15 @@
     "I4",
     "I6"
   ],
+  "odd": {
+    "file": "orbital_tables_odd.bin",
+    "channels": [
+      "J1",
+      "J3",
+      "J5",
+      "0"
+    ]
+  },
   "rows": [
     {
       "name": "1s",

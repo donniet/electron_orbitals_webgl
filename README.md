@@ -45,10 +45,12 @@ The server lets the browser cache files. If you edit the code, hard-reload
 - **Rendering controls:** exposure (mean detections per pixel), *Equalize
   orbitals* (brightens faint outer orbitals; densities are then no longer to
   scale), *Fixed scale* (the same zoom for every element, so sizes can be
-  compared), the tone curve, a dark or white background, and noise
-  resolution.
-- **Keys:** space pause · r reset view · s save PNG · ←/→ element ·
-  Esc stop comparing.
+  compared), *Cut away front half* (only the cloud behind a plane through the
+  nucleus, parallel to the screen, at double brightness: rotate the atom to
+  see which lobes point toward or away from you), the tone curve, a dark or
+  white background, and noise resolution.
+- **Keys:** space pause · r reset view · s save PNG · c cut away ·
+  ←/→ element · Esc stop comparing.
 
 ### Reading the picture
 
@@ -74,6 +76,7 @@ for reproducible screenshots:
 | `mode=white` | White background (default `dark`). |
 | `equalize=1` | Equalize orbital brightness. |
 | `scale=fixed` | Same view scale for every element. |
+| `cut=1` | Cut away the front half of the cloud. |
 | `density=0.5` | Exposure. |
 | `kmax=4`, `gamma=0.5` | Tone curve: counts for full brightness, and gamma. |
 | `res=full` | Noise resolution: `auto` (default), `full` or `half`. |

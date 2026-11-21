@@ -45,7 +45,7 @@ static-y noise. Two atoms can be shown side by side (A/B comparison).
 | `js/selection.js` | The selected atoms A (+ optional B) and everything derived from their union. |
 | `js/math.js` | CPU mirrors of the shader (column density, `pcg4d`, Poisson) used by tests, plus quaternions. |
 | `js/ui.js`, `js/radial.js`, `js/tile.js`, `js/controls.js`, `js/view.js`, `js/tables.js` | Panel/overlay, radial-density chart, element tile, input, scale animation, table loader. |
-| `tools/gen_tables.py`, `tools/orbitals.py` | Generate the moment tables (`data/orbital_tables.*`). |
+| `tools/gen_tables.py`, `tools/orbitals.py` | Generate the moment tables (`data/orbital_tables*`, incl. the odd cut-away moments). |
 | `tools/build_elements.py` | Builds `data/elements.json` from cached, cited sources in `data/sources/`. |
 | `tests/` | `test.html` + `tests.js` (browser, incl. GPU), `test_*.py` (stdlib unittest), `bench.*` (frame-time probe). |
 
@@ -56,6 +56,12 @@ static-y noise. Two atoms can be shown side by side (A/B comparison).
   variable `u = Z_eff·b/n` (texture: 1024 × rows, RGBA = I0, I2, I4, I6).
   s/p/d/f column densities are exact combinations of these (see the header of
   `tools/orbitals.py`). New radial rows are **appended**; never reorder rows.
+- **Cut-away** (front half removed): the odd half-line moments
+  `J_k = ∫_0^∞ R² t^k / r^(2l) dt`, k = 1, 3, 5, live in
+  `data/orbital_tables_odd.bin` (same layout, RGBA = J1, J3, J5, 0). The shader
+  adds `2·uCut·(odd terms)` to the whole-ray column (uCut = −1: the half
+  behind the plane, view z < 0, shown at double gain). It works only because
+  the plane passes through the nucleus; a movable plane would need 2-D tables.
 - **Ray geometry** lives in the vertex shader; the fragment shader starts at
   the physics. `gl_FragCoord` is used only for the random-number key.
 - **Randomness:** counter-based `pcg4d(x, y, frameSeed, stream)`; uniforms
@@ -112,7 +118,7 @@ google-chrome --headless=new --no-sandbox --use-angle=swiftshader \
   1366×768, phone `--window-size=390,844 --force-device-scale-factor=2`).
   Look at them; check overlaps, clipping and both themes.
 - **Reproducible frames:** URL options `?z=26&debug=1&paused=1&spin=0&res=full`
-  (also `z2=` for a second atom, `mode=white`, `equalize=1`, `scale=fixed`,
+  (also `z2=` for a second atom, `mode=white`, `equalize=1`, `scale=fixed`, `cut=1`,
   `density=`). Use these for **pixel-identical before/after comparisons** when a
   change should not alter output (refactors, file moves).
 - For numeric/visual claims (noise quality, alignment, performance), measure:
