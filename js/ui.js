@@ -8,16 +8,16 @@ import { qToMat3, meanR2, hslCss } from './math.js';
 import { categoryClass, drawElementTile, renderTileCanvas, TILE_W } from './tile.js';
 
 const BOHR_PM = 52.9177;
-const CAPACITY = { 0: 2, 1: 6, 2: 10, 3: 14 };
+export const CAPACITY = { 0: 2, 1: 6, 2: 10, 3: 14 };
 
 // Swatch colour for an orbital: paler for low-chroma (outer-shell) orbitals,
 // approximating how they read in the render.
-function orbitalCss(o, el) {
+export function orbitalCss(o, el) {
   const c = orbitalChroma(o, el);
   return hslCss(o.hue, Math.round(90 * c), Math.round(55 + 25 * (1 - c)));
 }
 
-const SHELL_LETTER = { 1: 'K', 2: 'L', 3: 'M', 4: 'N', 5: 'O', 6: 'P' };
+export const SHELL_LETTER = { 1: 'K', 2: 'L', 3: 'M', 4: 'N', 5: 'O', 6: 'P' };
 
 
 const $ = sel => document.querySelector(sel);
@@ -102,6 +102,7 @@ export function buildUI(app) {
   $('#show-overlay').addEventListener('change', e => app.setOverlay(e.target.checked));
   $('#reset-view').addEventListener('click', () => app.resetView());
   $('#save-png').addEventListener('click', () => app.savePng());
+  $('#print-page').addEventListener('click', () => app.openPrintPage());
   $('#show-all').addEventListener('click', () => app.showAll());
   $('#show-valence').addEventListener('click', () => app.showValence());
   $('#radial-shells').addEventListener('click', () => app.setRadialMode('shell'));
@@ -115,6 +116,7 @@ export function buildUI(app) {
     else if (e.key === ' ') { e.preventDefault(); app.setPaused(!app.state.paused); }
     else if (e.key === 'r') app.resetView();
     else if (e.key === 's') app.savePng();
+    else if (e.key === 'p') app.openPrintPage();
     else if (e.key === 'c') app.setCut(!app.state.cut);
     else if (e.key === 'n') app.setColour(app.state.colour === 'nearest' ? 'blend' : 'nearest');
     else if (e.key === 'Escape') { if (app.pickingSecond) app.togglePicking(); else app.clearSecond(); }
@@ -270,10 +272,10 @@ function tileCanvas(el, scale = 1) {
   renderTileCanvas(c, el, scale);
   return c;
 }
-const periodGroup = el => `${el.period} / ${el.group ?? 'f-block'}`;
-const RADIUS_TITLE = 'Rahm atomic radius: where the free atom\'s electron density falls to ' +
+export const periodGroup = el => `${el.period} / ${el.group ?? 'f-block'}`;
+export const RADIUS_TITLE = 'Rahm atomic radius: where the free atom\'s electron density falls to ' +
   '0.001 e/bohr³ (Rahm, Hoffmann & Ashcroft 2016)';
-const en = el => (el.electronegativity == null ? '—' : el.electronegativity.toFixed(2));
+export const en = el => (el.electronegativity == null ? '—' : el.electronegativity.toFixed(2));
 
 // ------------------------------------------------------------ orbital legend
 // The union of the selected atoms' subshells, grouped by shell (n). Shell
@@ -293,10 +295,6 @@ function renderLegend(app, atoms) {
       h('th', { class: 'num', title: 'RMS radius √⟨r²⟩', html: 'r<sub>rms</sub> pm' })));
 
   const occOf = (el, idx) => idx.reduce((a, i) => a + el.occupancy[i], 0);
-  const rmsPm = (el, sh) => {
-    const z = el.zeffBySubshell[sh.id];
-    return el.subshells[sh.id] ? (Math.sqrt(meanR2(sh.n, sh.l, z)) * BOHR_PM).toFixed(0) : '';
-  };
   // Swatch colour (depth-based chroma) from the first atom that has it.
   const owner = i => atoms.find(el => el.occupancy[i] > 0) || A;
   const checkbox = (title, idx, onChange) => {
@@ -375,9 +373,23 @@ function renderLegend(app, atoms) {
   $('#legend tbody').replaceChildren(...rows);
 }
 
-// Partly filled p/d/f subshells: which orbitals hold the electrons is one of
-// several equivalent (degenerate) choices; say which convention is shown.
+// RMS radius of a subshell in pm ('' if the atom has no such electrons).
+export function rmsPm(el, sh) {
+  const z = el.zeffBySubshell[sh.id];
+  return el.subshells[sh.id] ? (Math.sqrt(meanR2(sh.n, sh.l, z)) * BOHR_PM).toFixed(0) : '';
+}
+
 function renderNotes(atoms) {
+  const notes = modelNotes(atoms);
+  const note = $('#fill-note');
+  note.hidden = notes.length === 0;
+  note.textContent = notes.join(' ');
+}
+
+// Model caveats for these atoms, as sentences. Partly filled p/d/f
+// subshells: which orbitals hold the electrons is one of several equivalent
+// (degenerate) choices; say which convention is shown.
+export function modelNotes(atoms) {
   const HUND_ORDER = { 1: 'p: x, y, z', 2: 'd: xy, yz, xz, x²−y², z²',
     3: 'f: z³, xz², yz², xyz, z(x²−y²), x(x²−3y²), y(3x²−y²)' };
   const notes = [];
@@ -398,9 +410,7 @@ function renderNotes(atoms) {
     notes.push('Non-relativistic hydrogen-like model: relativistic contraction / expansion of ' +
       'heavy-atom orbitals (e.g. 6s, 5d) is not included.');
   }
-  const note = $('#fill-note');
-  note.hidden = notes.length === 0;
-  note.textContent = notes.join(' ');
+  return notes;
 }
 
 function stepButton(label, title, z, app) {

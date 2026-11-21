@@ -1,3 +1,4 @@
+/* Category colours (--cat-*) live in categories.css. */
 :root {
   --bg: #0b0d12;
   --panel: #151922;
@@ -6,15 +7,6 @@
   --muted: #8b93a7;
   --accent: #6aa8ff;
   --border: #2a3142;
-  --cat-reactive-nonmetal: #3f8f5a;
-  --cat-noble-gas: #6b5bb5;
-  --cat-alkali-metal: #b55b4a;
-  --cat-alkaline-earth-metal: #b5884a;
-  --cat-metalloid: #4a8fb5;
-  --cat-halogen: #4ab5a3;
-  --cat-lanthanide: #b0628c;
-  --cat-post-transition-metal: #6f7f8f;
-  --cat-transition-metal: #a8664e;
 }
 
 * { box-sizing: border-box; }

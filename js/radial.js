@@ -45,7 +45,15 @@ function lineSample(color, dash = []) {
     `stroke="${color}" stroke-width="2"${da}/></svg>`;
 }
 
-const INK = { muted: '#8b93a7', faint: '#2a3142', text: '#e6e9f0', total: '#c5cad6' };
+// Neutral inks (axes, grid, labels, the total curve) per surface: the dark
+// panel, or white paper on the print page. The series colours are the same
+// on both; they were also validated on #ffffff (same results: contrast,
+// lightness and normal-vision PASS, CVD n5/n6 in the 6-8 band, which the
+// direct labels cover).
+const INKS = {
+  dark: { muted: '#8b93a7', faint: '#2a3142', text: '#e6e9f0', total: '#c5cad6', surface: '#151922' },
+  light: { muted: '#5c6375', faint: '#dfe3ea', text: '#1d2230', total: '#6b7280', surface: '#ffffff' },
+};
 const M = { l: 34, r: 8, t: 10, b: 22 };   // margins, CSS px
 const SAMPLES = 240;
 
@@ -79,7 +87,11 @@ function niceStep(range, target) {
   return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * p;
 }
 
-export function createRadialPlot(canvas, tooltip, legendEl) {
+// theme: 'dark' | 'light'; dpr: canvas pixels per CSS pixel (default: the
+// screen's, capped at 2; the print page asks for more). Without a tooltip
+// element there is no hover.
+export function createRadialPlot(canvas, tooltip, legendEl, { theme = 'dark', dpr: fixedDpr = null } = {}) {
+  const INK = INKS[theme];
   let model = null;   // last drawn data, for hover
 
   let legendFor = null;
@@ -98,7 +110,7 @@ export function createRadialPlot(canvas, tooltip, legendEl) {
 
   function draw(state, geo, hoverX = null) {
     const el = state.element;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = fixedDpr ?? Math.min(window.devicePixelRatio || 1, 2);
     const cw = canvas.clientWidth, ch = canvas.clientHeight;
     if (canvas.width !== Math.round(cw * dpr)) canvas.width = Math.round(cw * dpr);
     if (canvas.height !== Math.round(ch * dpr)) canvas.height = Math.round(ch * dpr);
@@ -209,7 +221,7 @@ export function createRadialPlot(canvas, tooltip, legendEl) {
       for (const s of active) {
         const v = s.f(r);
         ctx.fillStyle = s.color;
-        ctx.strokeStyle = '#151922';
+        ctx.strokeStyle = INK.surface;
         ctx.lineWidth = 2;
         ctx.beginPath(); ctx.arc(X(r), Y(Math.min(v, yMax)), 4, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
         rows.push(`<div>${lineSample(s.color, s.dash)}${s.label}<b>${v.toFixed(3)}</b></div>`);
@@ -220,11 +232,12 @@ export function createRadialPlot(canvas, tooltip, legendEl) {
       const left = hoverX + 12 + tooltip.offsetWidth > cw ? hoverX - 12 - tooltip.offsetWidth : hoverX + 12;
       tooltip.style.left = `${left}px`;
       tooltip.style.top = `${M.t}px`;
-    } else {
+    } else if (tooltip) {
       tooltip.hidden = true;
     }
   }
 
+  if (!tooltip) return { draw };
   // Hit target is the whole plot area, wider than the 2px lines.
   canvas.addEventListener('pointermove', e => {
     if (!model) return;

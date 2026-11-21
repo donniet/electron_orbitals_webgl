@@ -839,6 +839,66 @@ test('GPU: white mode background is white', () => {
   assert(brightness(px, 2, 2) === 765, 'corner not white');
 });
 
+// ------------------------------------------------------------ print page
+async function testAsync(name, fn) {
+  try {
+    await fn();
+    results.push({ name, ok: true });
+  } catch (e) {
+    results.push({ name, ok: false, msg: e.message });
+  }
+}
+
+// Load a page in a hidden iframe (letter-sized so its layout is the real
+// one) and wait until it says it is ready.
+async function loadFrame(url, timeout = 60000) {
+  const f = document.createElement('iframe');
+  f.style.cssText = 'position:absolute;left:-10000px;width:900px;height:1200px';
+  f.src = url;
+  document.body.append(f);
+  const t0 = performance.now();
+  while (f.contentDocument?.body?.dataset.ready !== '1') {
+    if (performance.now() - t0 > timeout) throw new Error(`${url} did not finish loading`);
+    await new Promise(r => setTimeout(r, 50));
+  }
+  return f;
+}
+
+await testAsync('print page: boxed 300 dpi image on white, details for both atoms, hidden orbitals listed', async () => {
+  // C (A) with 2px (orbital index P('2px')) hidden, next to O (B).
+  const f = await loadFrame(`../print.html?z=6&z2=8&hide=${P('2px')}&seed=7&paper=letter&grain=2`);
+  const doc = f.contentDocument;
+  const img = doc.getElementById('sim-img');
+  // Letter: 7.5 in content width at 300 px/in, 4:3, multiples of 4.
+  assert(img.naturalWidth === 2248 && img.naturalHeight === 1684,
+    `image ${img.naturalWidth}x${img.naturalHeight}`);
+  const box = doc.getElementById('sim-box').getBoundingClientRect();
+  const ir = img.getBoundingClientRect();
+  near(ir.left, box.left, 0.5, 'box left'); near(ir.right, box.right, 0.5, 'box right');
+  near(ir.top, box.top, 0.5, 'box top'); near(ir.bottom, box.bottom, 0.5, 'box bottom');
+  assert(f.contentWindow.getComputedStyle(doc.getElementById('sim-box')).outlineStyle === 'solid', 'box outline');
+  // White background: the image's corner pixel.
+  const c = document.createElement('canvas');
+  c.width = c.height = 1;
+  c.getContext('2d').drawImage(img, 0, img.naturalHeight - 1, 1, 1, 0, 0, 1, 1);
+  const px = c.getContext('2d').getImageData(0, 0, 1, 1).data;
+  assert(px[0] === 255 && px[1] === 255 && px[2] === 255, `corner ${[...px]}`);
+  // Notes above and below the image on page 1.
+  const notes = [...doc.querySelectorAll('.page1 .notes')].map(n => n.getBoundingClientRect());
+  assert(notes.length === 2 && notes[0].bottom <= box.top && notes[1].top >= box.bottom, 'notes above and below');
+  assert(notes.every(n => n.height >= 0.9 * 96), 'notes at least 0.9 in tall');
+  // Details: both atoms, the occupied subshells, and the hidden 2px.
+  assert(doc.querySelector('.title').textContent.includes('Carbon') &&
+    doc.querySelector('.title').textContent.includes('Oxygen'), 'title');
+  const subs = [...doc.querySelectorAll('#legend tr.sub .orb-label')].map(td => td.firstChild.textContent);
+  assert(subs.join() === '1s,2s,2p', `subshells ${subs}`);
+  const hiddenNote = doc.getElementById('hidden-note');
+  assert(!hiddenNote.hidden && hiddenNote.textContent.includes('2px'), `hidden note: ${hiddenNote.textContent}`);
+  assert(doc.getElementById('radial').width > 0 && doc.querySelectorAll('#radial-legend .rl-item').length === 2,
+    'radial A vs B');
+  f.remove();
+});
+
 // ------------------------------------------------------------ report
 const pass = results.filter(r => r.ok).length;
 const out = document.getElementById('results');

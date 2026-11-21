@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Electron Orbitals · Print</title>
+  <link rel="stylesheet" href="css/categories.css">
+  <link rel="stylesheet" href="css/print.css">
+  <style id="page-size"></style>
+</head>
+<body>
+  <!-- Screen only: the print settings. Opened from the app's Print button,
+       which passes the current view in the URL. -->
+  <div id="toolbar" class="toolbar">
+    <button id="do-print" class="primary">Print</button>
+    <button id="resample" title="Draw a new random sample of detections">New sample</button>
+    <label>Paper
+      <select id="paper">
+        <option value="letter">Letter</option>
+        <option value="a4">A4</option>
+      </select>
+    </label>
+    <label title="Noise samples per inch on paper (the image itself is 300 pixels per inch)">Grain
+      <select id="grain">
+        <option value="1">Fine · 300/in</option>
+        <option value="2">Medium · 150/in</option>
+        <option value="4">Coarse · 75/in</option>
+      </select>
+    </label>
+    <span id="status" class="status" aria-live="polite"></span>
+  </div>
+
+  <!-- Page 1: notes, the boxed simulation, notes (the notes share the
+       space the image leaves). Page 2: the details. -->
+  <article class="sheet page1">
+    <header class="head">
+      <h1 class="title"></h1>
+      <span class="head-right">Electron Orbitals · <span id="date"></span></span>
+    </header>
+
+    <section class="notes" aria-label="Notes"><span class="notes-label">Notes</span></section>
+
+    <figure class="sim">
+      <div id="sim-box" class="sim-box">
+        <img id="sim-img" alt="">
+        <div id="error" class="error" hidden></div>
+      </div>
+      <figcaption id="caption" class="caption"></figcaption>
+    </figure>
+
+    <section class="notes" aria-label="Notes"><span class="notes-label">Notes</span></section>
+  </article>
+
+  <article class="sheet page2">
+    <header class="head">
+      <h1 class="title"></h1>
+      <span class="head-right">Details</span>
+    </header>
+
+    <div class="details">
+      <div class="col">
+        <section>
+          <h2>Element</h2>
+          <div id="element-card" class="card"></div>
+        </section>
+        <section class="radial-sec">
+          <h2>Radial density <span class="h2-unit">e⁻ per a₀ vs r (pm)</span></h2>
+          <div id="radial-legend" class="radial-legend"></div>
+          <canvas id="radial" role="img"
+                  aria-label="Radial electron density of each subshell and the total versus distance from the nucleus"></canvas>
+        </section>
+        <p id="model-notes" class="note"></p>
+      </div>
+      <div class="col">
+        <section>
+          <h2>Orbitals</h2>
+          <table id="legend" class="legend"></table>
+          <p id="hidden-note" class="note" hidden></p>
+        </section>
+      </div>
+    </div>
+
+    <footer class="foot">
+      Each image is one frame: electron detections sampled along every ray from |ψ|² of
+      hydrogen-like orbitals with Clementi–Raimondi Z<sub>eff</sub>. Dashed ring: Rahm atomic
+      radius. Colour = orbital shape.
+    </footer>
+  </article>
+
+  <script type="module" src="js/print.js"></script>
+</body>
+</html>

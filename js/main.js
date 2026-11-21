@@ -21,7 +21,7 @@
 import { elementByZ, ELEMENTS, ORBITALS } from './elements.js';
 import { qAxisAngle, qMul, qNormalize } from './math.js';
 import { createRenderer, baseHalf, viewGeometry, splitViews } from './renderer.js';
-import { createScaleAnimator, prefersReducedMotion } from './view.js';
+import { createScaleAnimator, prefersReducedMotion, defaultOrientation } from './view.js';
 import { loadTables } from './tables.js';
 import { attachControls } from './controls.js';
 import { buildUI, syncControls, updateElement, updateTable, updatePerf, drawOverlay } from './ui.js';
@@ -31,16 +31,12 @@ import { createRecorderUI } from './recordui.js';
 
 const params = new URLSearchParams(location.search);
 
-// Default orientation: tilted so x, y and z lobes are all distinguishable.
-// Gentle spin at start (about view +y), unless the viewer prefers reduced
-// motion or ?spin=0. A fling replaces it; grabbing the atom stops it.
+// Default orientation: see view.js. Gentle spin at start (about view +y),
+// unless the viewer prefers reduced motion or ?spin=0. A fling replaces it;
+// grabbing the atom stops it.
 function defaultSpin() {
   if (params.get('spin') === '0' || prefersReducedMotion()) return null;
   return { axis: [0, 1, 0], rate: 0.0025 };            // rad/ms (~14 deg/s)
-}
-
-function defaultOrientation() {
-  return qMul(qAxisAngle([1, 0, 0], 0.45), qAxisAngle([0, 1, 0], -0.6));
 }
 
 const state = {
@@ -233,7 +229,36 @@ const app = {
       setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     }, 'image/png');
   },
+  // Printable page (print.html) in a new tab: this view on white, with
+  // the element details. Everything it needs is in the URL (see
+  // printParams), so the page can be reloaded or bookmarked.
+  openPrintPage() {
+    window.open(`print.html?${printParams(state)}`, '_blank', 'noopener');
+  },
 };
+
+// URL parameters for print.html: the view (atoms, orientation, zoom), the
+// exposure and tone settings and which orbitals are hidden. The background
+// is always white there; the seed is not passed (the page draws a fresh
+// sample, re-rollable; ?seed= fixes it).
+function printParams(s) {
+  const p = new URLSearchParams({ z: s.element.z });
+  if (s.second) p.set('z2', s.second.z);
+  p.set('q', s.orientation.map(c => +c.toFixed(6)).join(','));
+  if (s.zoom !== 1) p.set('zoom', +s.zoom.toFixed(4));
+  p.set('density', +s.density.toFixed(4));
+  p.set('kmax', s.kMax);
+  p.set('gamma', s.gamma);
+  if (s.equalize) p.set('equalize', '1');
+  if (s.fixedScale) p.set('scale', 'fixed');
+  if (s.cut) p.set('cut', '1');
+  if (s.colour !== 'nearest') p.set('colour', s.colour);
+  if (!s.overlay) p.set('overlay', '0');
+  if (s.radialMode !== 'auto') p.set('radial', s.radialMode);
+  const hidden = s.visible.flatMap((v, i) => (v ? [] : [i]));
+  if (hidden.length) p.set('hide', hidden.join(','));
+  return p.toString();
+}
 
 attachControls(glCanvas, {
   getOrientation: () => state.orientation,

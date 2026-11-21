@@ -1,9 +1,16 @@
-// Smooth view-scale changes (e.g. when switching elements).
+// View defaults and smooth view-scale changes (e.g. when switching elements).
 //
 // The animator eases a positive scale value toward a target in log space,
 // so growing and shrinking by the same factor take the same visual pace.
 // Retargeting mid-animation starts from the value currently on screen, so
 // rapid changes chain without jumps.
+
+import { qAxisAngle, qMul } from './math.js';
+
+// Default orientation: tilted so x, y and z lobes are all distinguishable.
+export function defaultOrientation() {
+  return qMul(qAxisAngle([1, 0, 0], 0.45), qAxisAngle([0, 1, 0], -0.6));
+}
 
 const easeInOutCubic = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 

@@ -21,6 +21,7 @@ static-y noise. Two atoms can be shown side by side (A/B comparison).
   ```sh
   python3 -m http.server 8000
   # app:    http://localhost:8000/
+  # print:  http://localhost:8000/print.html?z=26   (the app's Print… button passes the view)
   # tests:  http://localhost:8000/tests/test.html
   # video:  http://localhost:8000/tests/video.html   (real time; see below)
   # bench:  http://localhost:8000/tests/bench.html?z=36,86   (also &colour=blend, &cut=1)
@@ -34,7 +35,8 @@ static-y noise. Two atoms can be shown side by side (A/B comparison).
 
 | Path | Role |
 |---|---|
-| `index.html`, `css/style.css` | Page and styles (responsive: stacked layout in portrait/narrow, compact strip on short screens). |
+| `index.html`, `css/style.css` | Page and styles (responsive: stacked layout in portrait/narrow, compact strip on short screens). `css/categories.css`: element-category colours, shared with the print page. |
+| `print.html`, `js/print.js`, `css/print.css` | Print page: one frame on white at 300 px/in in a box (Letter/A4, grain 1/2/4), ruled notes above and below; page 2 has the element card, orbital table, radial density (light theme) and model notes. State comes in the URL (`printParams` in `main.js`). |
 | `js/main.js` | App state, frame loop, resize, render scale (Auto/Full/Half), spin, selection actions. |
 | `js/renderer.js` | WebGL renderer: `renderViews` (one pane per atom), `splitViews`, view geometry (`viewRadius`, `baseHalf`), equalize gains, d/f peak search. |
 | `js/gl.js` | WebGL helpers; `createProgram(..., { defines })` injects `#define`s after `#version` plus `#line 2`. |
