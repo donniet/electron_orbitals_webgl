@@ -1,9 +1,10 @@
 // Recording UI: the red dot over the view, and the recording controls that
-// replace the periodic-table strip while they are open.
+// replace the periodic-table strip while they are open. The user-facing
+// text says "Render" (every frame is rendered offline); the code says record.
 //
 // States: closed -> setup (dot blinks, outside the crop dimmed)
 //         -> rendering (dot hidden, live view frozen, progress bar)
-//         -> done (download link) or error; back to setup with "Record again".
+//         -> done (download link) or error; back to setup with "Render again".
 
 import {
   RESOLUTIONS, FPS_CHOICES, QUALITY, evenSize, paneCrops, rotationPeriod, framePlan,
@@ -56,7 +57,7 @@ export function createRecorderUI(ctx) {
 
   if (!videoSupported()) {
     dot.disabled = true;
-    dot.title = 'Video recording needs WebCodecs (VideoEncoder), which this browser does not have.';
+    dot.title = 'Rendering videos needs WebCodecs (VideoEncoder), which this browser does not have.';
   }
   dot.addEventListener('click', () => (phase === 'closed' ? open() : phase !== 'rendering' && close()));
 
@@ -159,7 +160,7 @@ export function createRecorderUI(ctx) {
       : h('span', { className: 'rb-muted' }, 'none available at this size');
 
     return [
-      h('span', { className: 'rb-title' }, 'Record video'),
+      h('span', { className: 'rb-title' }, 'Render video'),
       field('Resolution', select([['current', `Current view (${cw} × ${ch})`], ...RESOLUTIONS.map(r => [r.id, r.label])],
         settings.res, set('res'))),
       field('Duration', h('span', { className: 'rb-radios' }, durRotation, durSeconds)),
@@ -170,8 +171,8 @@ export function createRecorderUI(ctx) {
       h('span', { className: 'rb-muted' + (bytes > LARGE_BYTES ? ' rb-warn' : '') },
         `${n} frames · ≈ ${formatBytes(bytes)}` + (bytes > LARGE_BYTES ? ' (may not fit in memory)' : '')),
       h('span', { className: 'rb-actions' },
-        h('button', { className: 'rb-primary', disabled: !settings.format, onclick: start, title: 'Render every frame and encode the video' }, '▶ Record'),
-        h('button', { onclick: close, title: 'Close the recording controls' }, '✕')),
+        h('button', { className: 'rb-primary', disabled: !settings.format, onclick: start, title: 'Render every frame and encode the video' }, '▶ Render'),
+        h('button', { onclick: close, title: 'Close the render controls' }, '✕')),
     ];
   }
 
@@ -185,13 +186,13 @@ export function createRecorderUI(ctx) {
     dot.hidden = phase === 'rendering';
     dot.classList.toggle('blink', phase === 'setup' || phase === 'done' || phase === 'error');
     dot.setAttribute('aria-pressed', String(phase !== 'closed'));
-    if (videoSupported()) dot.title = phase === 'closed' ? 'Record a video' : 'Close the recording controls';
+    if (videoSupported()) dot.title = phase === 'closed' ? 'Render a video' : 'Close the render controls';
     ptable.hidden = phase !== 'closed';
     bar.hidden = phase === 'closed';
     bar.replaceChildren();
     if (phase === 'setup') bar.append(...setupControls());
     else if (phase === 'rendering') {
-      bar.append(h('span', { className: 'rb-title' }, 'Recording'),
+      bar.append(h('span', { className: 'rb-title' }, 'Rendering'),
         h('progress', { max: progress[1] || 1, value: progress[0] }),
         h('span', { className: 'rb-progress-text rb-muted' }),
         h('span', { className: 'rb-actions' }, h('button', { onclick: () => abort?.abort() }, 'Cancel')));
@@ -201,10 +202,10 @@ export function createRecorderUI(ctx) {
         h('a', { className: 'rb-primary rb-download', href: url, download: result.filename },
           `⬇ Download ${result.filename} (${formatBytes(result.bytes)})`),
         h('span', { className: 'rb-actions' },
-          h('button', { onclick: () => { URL.revokeObjectURL(url); url = null; result = null; open(); } }, 'Record again'),
+          h('button', { onclick: () => { URL.revokeObjectURL(url); url = null; result = null; open(); } }, 'Render again'),
           h('button', { onclick: close }, 'Close')));
     } else if (phase === 'error') {
-      bar.append(h('span', { className: 'rb-title' }, 'Recording failed'),
+      bar.append(h('span', { className: 'rb-title' }, 'Rendering failed'),
         h('span', { className: 'rb-warn' }, error),
         h('span', { className: 'rb-actions' }, h('button', { onclick: open }, 'Back'), h('button', { onclick: close }, 'Close')));
     }

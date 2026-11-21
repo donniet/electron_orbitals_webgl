@@ -53,8 +53,8 @@ The server lets the browser cache files. If you edit the code, hard-reload
   cut-away this gives a coloured cross-section. Blend mixes the colours of
   every detection along the line of sight), the tone curve, a dark or white
   background, and noise resolution.
-- **Record a video:** click the red dot at the top right of the view. The
-  periodic table makes way for the recording controls:
+- **Render a video:** click the red dot at the top right of the view. The
+  periodic table makes way for the render controls:
   - *Resolution:* the current view, 720p to 4K, square or portrait. Parts of
     the view outside the video's frame are dimmed (one frame per atom when
     comparing).
@@ -65,7 +65,7 @@ The server lets the browser cache files. If you edit the code, hard-reload
   - *Format:* those your browser can encode. MP4 · H.264 plays almost
     everywhere; WebM offers VP9, AV1 and VP8.
 
-  *Record* renders every frame offline while the live view pauses (*Cancel*
+  *Render* draws every frame offline while the live view pauses (*Cancel*
   stops it), then offers the file for download. The overlay is included if
   it is shown. Per-pixel noise is hard to compress, so files are large (High
   at 1080p60 is about 100 Mbit/s). Needs a browser with WebCodecs.
@@ -101,7 +101,7 @@ for reproducible screenshots:
 | `density=0.5` | Exposure. |
 | `kmax=4`, `gamma=0.5` | Tone curve: counts for full brightness, and gamma. |
 | `res=full` | Noise resolution: `auto` (default), `full` or `half`. |
-| `record=1` | Open the video recording controls. |
+| `record=1` | Open the video render controls. |
 | `paused=1` | Start paused. |
 | `spin=0` | Start without the slow rotation. |
 | `debug=1` | Seed = frame number, so frames are reproducible. |

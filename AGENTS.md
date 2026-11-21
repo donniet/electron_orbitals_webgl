@@ -45,7 +45,7 @@ static-y noise. Two atoms can be shown side by side (A/B comparison).
 | `js/elements.js` | Loads `data/elements.json`; occupancy (Hund fill), configurations, `MAX_Z`. |
 | `js/selection.js` | The selected atoms A (+ optional B) and everything derived from their union. |
 | `js/math.js` | CPU mirrors of the shader (column density, `pcg4d`, Poisson) used by tests, plus quaternions. |
-| `js/record.js`, `js/recordui.js`, `js/mux-mp4.js`, `js/mux-webm.js` | Video recording: frame plan, offscreen rendering at a fixed scale (centre crop of the view), WebCodecs encoding, codec levels; the red dot and recording controls; hand-written MP4 (H.264) and WebM (VP9/AV1/VP8) muxers. |
+| `js/record.js`, `js/recordui.js`, `js/mux-mp4.js`, `js/mux-webm.js` | Video recording: frame plan, offscreen rendering at a fixed scale (centre crop of the view), WebCodecs encoding, codec levels; the red dot and recording controls; hand-written MP4 (H.264) and WebM (VP9/AV1/VP8) muxers. The UI calls it *Render*; the code says record. |
 | `js/ui.js`, `js/radial.js`, `js/tile.js`, `js/controls.js`, `js/view.js`, `js/tables.js` | Panel/overlay, radial-density chart, element tile, input, scale animation, table loader. |
 | `tools/gen_tables.py`, `tools/orbitals.py` | Generate the moment tables (`data/orbital_tables*`, incl. the odd cut-away moments). |
 | `tools/build_elements.py` | Builds `data/elements.json` from cached, cited sources in `data/sources/`. |
