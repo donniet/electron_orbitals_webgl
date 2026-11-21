@@ -7,10 +7,14 @@
 
 const DEFAULT_BASE = new URL('../data/', import.meta.url);
 
+// Always revalidate the data files (a 304 when unchanged): a cached old
+// metadata file next to new tables or code would load mismatched data.
+const FETCH_OPTS = { cache: 'no-cache' };
+
 export async function loadTables(base = DEFAULT_BASE) {
   const [metaRes, binRes] = await Promise.all([
-    fetch(new URL('orbital_tables.json', base)),
-    fetch(new URL('orbital_tables.bin', base)),
+    fetch(new URL('orbital_tables.json', base), FETCH_OPTS),
+    fetch(new URL('orbital_tables.bin', base), FETCH_OPTS),
   ]);
   if (!metaRes.ok || !binRes.ok) {
     throw new Error(`Could not load orbital tables (${metaRes.status}/${binRes.status}). ` +
@@ -18,10 +22,14 @@ export async function loadTables(base = DEFAULT_BASE) {
       '(python3 -m http.server 8000).');
   }
   const meta = await metaRes.json();
+  if (!meta.odd) {
+    throw new Error('orbital_tables.json has no odd (cut-away) tables: it is out of date ' +
+      'or cached. Hard-reload the page, or run python3 tools/gen_tables.py.');
+  }
   const expected = meta.rows.length * meta.N * 4;
   const data = toFloats(await binRes.arrayBuffer(), 'orbital_tables.bin', expected);
 
-  const oddRes = await fetch(new URL(meta.odd.file, base));
+  const oddRes = await fetch(new URL(meta.odd.file, base), FETCH_OPTS);
   if (!oddRes.ok) throw new Error(`Could not load ${meta.odd.file} (${oddRes.status}).`);
   const odd = toFloats(await oddRes.arrayBuffer(), meta.odd.file, expected);
   return { N: meta.N, uMax: meta.uMax, rows: meta.rows, data, odd };
