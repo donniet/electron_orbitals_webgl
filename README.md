@@ -55,9 +55,9 @@ The server lets the browser cache files. If you edit the code, hard-reload
   background, and noise resolution.
 - **Record a video:** click the red dot at the top right of the view. The
   periodic table makes way for the recording controls:
-  - *Resolution:* the current view, 720p to 4K, square or portrait. Dashed
-    rectangles on the view show what the video will contain (one per atom
-    when comparing).
+  - *Resolution:* the current view, 720p to 4K, square or portrait. Parts of
+    the view outside the video's frame are dimmed (one frame per atom when
+    comparing).
   - *Duration:* exactly one rotation (the video loops seamlessly; the atom
     must be spinning) or a number of seconds.
   - *FPS*, *grain* (default 2 px, which keeps each detection's colour intact

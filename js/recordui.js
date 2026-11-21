@@ -1,7 +1,7 @@
 // Recording UI: the red dot over the view, and the recording controls that
 // replace the periodic-table strip while they are open.
 //
-// States: closed -> setup (dot blinks, crop rectangle on the view)
+// States: closed -> setup (dot blinks, outside the crop dimmed)
 //         -> rendering (dot hidden, live view frozen, progress bar)
 //         -> done (download link) or error; back to setup with "Record again".
 
@@ -219,23 +219,19 @@ export function createRecorderUI(ctx) {
     return paneCrops(v.width, v.height, v.panes, w, hgt, settings.grain);
   }
 
-  // Dim everything outside the crop rectangles and outline them (live
-  // overlay only; never part of the video).
+  // Dim everything outside the crop rectangles (live overlay only; never
+  // part of the video). No outline: the blinking dot marks recording mode,
+  // and with "Current view" nothing is dimmed at all.
   function drawCrop(canvas) {
     const rects = crop();
     if (!rects) return;
     const g = canvas.getContext('2d');
-    const W = canvas.width, H = canvas.height, dpr = ctx.viewInfo().dpr;
     g.save();
     g.fillStyle = app.state.mode === 'white' ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.55)';
     g.beginPath();
-    g.rect(0, 0, W, H);
+    g.rect(0, 0, canvas.width, canvas.height);
     for (const c of rects) g.rect(c.x, c.y, c.w, c.h);
     g.fill('evenodd');
-    g.strokeStyle = '#e0302a';
-    g.lineWidth = 1.5 * dpr;
-    g.setLineDash([6 * dpr, 4 * dpr]);
-    for (const c of rects) g.strokeRect(c.x + 0.5, c.y + 0.5, c.w - 1, c.h - 1);
     g.restore();
   }
 
