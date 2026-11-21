@@ -10,7 +10,7 @@ import { categoryClass, drawElementTile, renderTileCanvas, TILE_W } from './tile
 const BOHR_PM = 52.9177;
 export const CAPACITY = { 0: 2, 1: 6, 2: 10, 3: 14 };
 
-// Swatch colour for an orbital: paler for low-chroma (outer-shell) orbitals,
+// Swatch color for an orbital: paler for low-chroma (outer-shell) orbitals,
 // approximating how they read in the render.
 export function orbitalCss(o, el) {
   const c = orbitalChroma(o, el);
@@ -87,8 +87,8 @@ export function buildUI(app) {
   $('#equalize').addEventListener('change', e => app.setEqualize(e.target.checked));
   $('#fixed-scale').addEventListener('change', e => app.setFixedScale(e.target.checked));
   $('#cut').addEventListener('change', e => app.setCut(e.target.checked));
-  for (const r of document.querySelectorAll('input[name=colourmode]')) {
-    r.addEventListener('change', e => { if (e.target.checked) app.setColour(e.target.value); });
+  for (const r of document.querySelectorAll('input[name=colormode]')) {
+    r.addEventListener('change', e => { if (e.target.checked) app.setColor(e.target.value); });
   }
   for (const r of document.querySelectorAll('input[name=bgmode]')) {
     r.addEventListener('change', () => r.checked && app.setMode(r.value));
@@ -118,7 +118,7 @@ export function buildUI(app) {
     else if (e.key === 's') app.savePng();
     else if (e.key === 'p') app.openPrintPage();
     else if (e.key === 'c') app.setCut(!app.state.cut);
-    else if (e.key === 'n') app.setColour(app.state.colour === 'nearest' ? 'blend' : 'nearest');
+    else if (e.key === 'n') app.setColor(app.state.color === 'nearest' ? 'blend' : 'nearest');
     else if (e.key === 'Escape') { if (app.pickingSecond) app.togglePicking(); else app.clearSecond(); }
   });
 }
@@ -158,7 +158,7 @@ export function syncControls(state) {
   $('#exposure').title = state.equalize
     ? 'Peak expected detections per pixel = exposure x 20'
     : 'Mean detections per pixel per frame (if the whole atom were in view)';
-  for (const r of document.querySelectorAll('input[name=colourmode]')) r.checked = r.value === state.colour;
+  for (const r of document.querySelectorAll('input[name=colormode]')) r.checked = r.value === state.color;
   for (const r of document.querySelectorAll('input[name=bgmode]')) r.checked = r.value === state.mode;
   for (const r of document.querySelectorAll('input[name=resmode]')) r.checked = r.value === state.resMode;
   $('#pause').textContent = state.paused ? 'Play' : 'Pause';
@@ -295,7 +295,7 @@ function renderLegend(app, atoms) {
       h('th', { class: 'num', title: 'RMS radius √⟨r²⟩', html: 'r<sub>rms</sub> pm' })));
 
   const occOf = (el, idx) => idx.reduce((a, i) => a + el.occupancy[i], 0);
-  // Swatch colour (depth-based chroma) from the first atom that has it.
+  // Swatch color (depth-based chroma) from the first atom that has it.
   const owner = i => atoms.find(el => el.occupancy[i] > 0) || A;
   const checkbox = (title, idx, onChange) => {
     const occupied = idx.filter(i => occupiedAny(atoms, i));
@@ -433,7 +433,7 @@ export function updatePerf(fps, renderK = 1, paused = false) {
 }
 
 // ------------------------------------------------------------ overlay
-// Fill text with a halo in the background colour so labels stay legible
+// Fill text with a halo in the background color so labels stay legible
 // over the atomic-radius ring and the speckle.
 function haloText(ctx, text, x, y, halo, width) {
   ctx.save();

@@ -32,11 +32,11 @@ function near(a, b, tol, msg = '') {
 }
 
 // ------------------------------------------------------------ video muxers
-// Encode `n` solid-colour frames with WebCodecs, mux them, then play the file
-// in a <video>: size, duration and the decoded colour at several frames.
-const MUX_COLOURS = [[230, 40, 40], [40, 200, 60], [40, 70, 230], [230, 220, 40], [220, 50, 220], [40, 220, 220]];
+// Encode `n` solid-color frames with WebCodecs, mux them, then play the file
+// in a <video>: size, duration and the decoded color at several frames.
+const MUX_COLORS = [[230, 40, 40], [40, 200, 60], [40, 70, 230], [230, 220, 40], [220, 50, 220], [40, 220, 220]];
 
-async function encodeColourFrames(codec, { width = 192, height = 108, fps = 30, n = 12, keyEvery = 4 } = {}) {
+async function encodeColorFrames(codec, { width = 192, height = 108, fps = 30, n = 12, keyEvery = 4 } = {}) {
   const canvas = new OffscreenCanvas(width, height);
   const ctx = canvas.getContext('2d');
   const chunks = [];
@@ -54,7 +54,7 @@ async function encodeColourFrames(codec, { width = 192, height = 108, fps = 30, 
   if (codec.startsWith('avc1')) config.avc = { format: 'avc' };
   encoder.configure(config);
   for (let i = 0; i < n; i++) {
-    const [r, g, b] = MUX_COLOURS[i % MUX_COLOURS.length];
+    const [r, g, b] = MUX_COLORS[i % MUX_COLORS.length];
     ctx.fillStyle = `rgb(${r},${g},${b})`;
     ctx.fillRect(0, 0, width, height);
     const frame = new VideoFrame(canvas, { timestamp: Math.round((i * 1e6) / fps), duration: Math.round(1e6 / fps) });
@@ -92,7 +92,7 @@ async function checkPlayback(bytes, mime, { width, height, fps, n }) {
       await videoEvent(video, 'seeked');
       ctx.drawImage(video, 0, 0);
       const px = ctx.getImageData(width >> 1, height >> 1, 1, 1).data;
-      const want = MUX_COLOURS[i % MUX_COLOURS.length];
+      const want = MUX_COLORS[i % MUX_COLORS.length];
       const err = Math.max(...want.map((v, j) => Math.abs(v - px[j])));
       assert(err < 24, `frame ${i}: got ${[...px.slice(0, 3)]} want ${want}`);
     }
@@ -103,7 +103,7 @@ async function checkPlayback(bytes, mime, { width, height, fps, n }) {
 
 for (const [label, codec] of [['H.264', 'avc1.42E01F']]) {
   await atest(`MP4 (${label}): muxed file plays with the right size, duration and frames`, async () => {
-    const e = await encodeColourFrames(codec);
+    const e = await encodeColorFrames(codec);
     assert(e.description, 'encoder gave no avcC description');
     const timescale = e.fps * 1000;
     const bytes = muxMp4({ width: e.width, height: e.height, timescale, frameDuration: 1000, description: e.description,
@@ -114,7 +114,7 @@ for (const [label, codec] of [['H.264', 'avc1.42E01F']]) {
 
 for (const [label, codec] of [['VP9', 'vp09.00.10.08'], ['VP8', 'vp8'], ['AV1', 'av01.0.04M.08']]) {
   await atest(`WebM (${label}): muxed file plays with the right size, duration and frames`, async () => {
-    const e = await encodeColourFrames(codec);
+    const e = await encodeColorFrames(codec);
     const bytes = muxWebm({ width: e.width, height: e.height, fps: e.fps, codec, description: e.description, chunks: e.chunks });
     await checkPlayback(bytes, 'video/webm', e);
   });
@@ -190,7 +190,7 @@ function recState(over = {}) {
   return {
     element: ELEMENTS[0], orientation: [0, 0, 0, 1], zoom: 1, density: 1, equalize: false, kMax: 4,
     gamma: 0.5, mode: 'dark', fixedScale: false, visible: ORBITALS.map(() => true), cut: false,
-    colour: 'blend', spin: { axis: [0, 1, 0], rate: (2 * Math.PI) / 500 }, overlay: false, debugSeed: true, ...over,
+    color: 'blend', spin: { axis: [0, 1, 0], rate: (2 * Math.PI) / 500 }, overlay: false, debugSeed: true, ...over,
   };
 }
 const VIEW = (() => {

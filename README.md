@@ -47,10 +47,10 @@ The server lets the browser cache files. If you edit the code, hard-reload
   scale), *Fixed scale* (the same zoom for every element, so sizes can be
   compared), *Cut away front half* (only the cloud behind a plane through the
   nucleus, parallel to the screen, at double brightness: rotate the atom to
-  see which lobes point toward or away from you), *Colour: Nearest / Blend*
-  (Nearest, the default, shows each pixel only in the colour of the orbital
+  see which lobes point toward or away from you), *Color: Nearest / Blend*
+  (Nearest, the default, shows each pixel only in the color of the orbital
   whose detection is nearest to you, like an opaque surface; with the
-  cut-away this gives a coloured cross-section. Blend mixes the colours of
+  cut-away this gives a colored cross-section. Blend mixes the colors of
   every detection along the line of sight), the tone curve, a dark or white
   background, and noise resolution.
 - **Render a video:** click the red dot at the top right of the view. The
@@ -60,7 +60,7 @@ The server lets the browser cache files. If you edit the code, hard-reload
     comparing).
   - *Duration:* exactly one rotation (the video loops seamlessly; the atom
     must be spinning) or a number of seconds.
-  - *FPS*, *grain* (default 2 px, which keeps each detection's colour intact
+  - *FPS*, *grain* (default 2 px, which keeps each detection's color intact
     in compressed video and makes smaller files), *quality*.
   - *Format:* those your browser can encode. MP4 · H.264 plays almost
     everywhere; WebM offers VP9, AV1 and VP8.
@@ -71,7 +71,7 @@ The server lets the browser cache files. If you edit the code, hard-reload
   it is shown. Per-pixel noise is hard to compress, so files are large (High
   at 1080p60 is about 100 Mbit/s). Needs a browser with WebCodecs.
 - **Keys:** space pause · r reset view · s save PNG · c cut away ·
-  n blend / nearest colour · ←/→ element · Esc stop comparing.
+  n blend / nearest color · ←/→ element · Esc stop comparing.
 
 ### Reading the picture
 
@@ -98,7 +98,7 @@ for reproducible screenshots:
 | `equalize=1` | Equalize orbital brightness. |
 | `scale=fixed` | Same view scale for every element. |
 | `cut=1` | Cut away the front half of the cloud. |
-| `colour=blend` | Mix every orbital's colours (default `nearest`: colour by the nearest detection). |
+| `color=blend` | Mix every orbital's colors (default `nearest`: color by the nearest detection). |
 | `density=0.5` | Exposure. |
 | `kmax=4`, `gamma=0.5` | Tone curve: counts for full brightness, and gamma. |
 | `res=full` | Noise resolution: `auto` (default), `full` or `half`. |
@@ -121,7 +121,7 @@ Example: `http://localhost:8000/?z=26&z2=44&equalize=1`
   a Monte Carlo simulation). That keeps the shader fast.
 - **Random detections.** Every frame, each pixel draws a Poisson-distributed
   count from that expected value, using a counter-based random-number
-  generator. The counts are coloured by orbital, added, and tone-mapped.
+  generator. The counts are colored by orbital, added, and tone-mapped.
 - **One sample per screen pixel.** The noise is drawn at the display's real
   pixel resolution (or an exact half), so it stays crisp without moiré.
 

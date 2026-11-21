@@ -5,7 +5,7 @@
 //   Inputs                 uniforms (incl. the cut-away), the per-orbital uniform block, the pixel's ray
 //   main()                 physics per pixel, then rendering to RGB
 //   1. Physics             orbital column densities from the moment tables
-//   2. Rendering helpers   colour conversion
+//   2. Rendering helpers   color conversion
 //   3. Numerical methods   3a. uniform random numbers, 3b. Poisson sampling
 //
 // Host-provided defines (injected by js/gl.js createProgram after #version):
@@ -15,7 +15,7 @@
 #endif
 
 // Steps of the march along a ray that places an orbital's nearest detection
-// (colour mode "nearest" only; see nearestDepthRef).
+// (color mode "nearest" only; see nearestDepthRef).
 #define NEAREST_STEPS 48
 
 #define TWO_PI (6.28318530718)
@@ -49,7 +49,7 @@ uniform uint  uSeed;         // per-frame random seed
 uniform float uKMax;         // detections giving full brightness
 uniform float uGamma;        // tone curve: amount = (k / uKMax)^uGamma
 uniform int   uMode;         // 0 = dark background, 1 = white background
-uniform int   uColourMode;   // 0 = blend every orbital's detections;
+uniform int   uColorMode;   // 0 = blend every orbital's detections;
                              // 1 = only the orbital with the nearest detection
 
 // Occupied, visible orbitals, packed into the first uCount slots of a
@@ -103,8 +103,8 @@ void main() {
   vec2 chroma = vec2(0.0);
   float total = 0.0;
 
-  // Nearest detection so far (colour mode 1): depth t along d (Bohr; larger
-  // is nearer the viewer) and that orbital's tone-mapped amount and colour.
+  // Nearest detection so far (color mode 1): depth t along d (Bohr; larger
+  // is nearer the viewer) and that orbital's tone-mapped amount and color.
   const float NONE = -1e30;
   float nearT = NONE;
   float nearSat = 0.0;
@@ -126,7 +126,7 @@ void main() {
     chroma += c;
     total += sat;
 
-    if (uColourMode == 1 && k > 0) {
+    if (uColorMode == 1 && k > 0) {
       // Where is this orbital's nearest detection? Its k detections are
       // independent draws from its density along the ray, so the nearest
       // sits at cumulative fraction 1 - v^(1/k) from the front (v uniform).
@@ -141,8 +141,8 @@ void main() {
       }
     }
   }
-  if (uColourMode == 1) {
-    // Only the nearest orbital's detections are shown, in its own colour.
+  if (uColorMode == 1) {
+    // Only the nearest orbital's detections are shown, in its own color.
     chroma = nearChroma;
     total = nearSat;
   }
@@ -161,7 +161,7 @@ void main() {
     // White (ink on paper): the exact dual of the dark image -- the negative
     // of the dark image computed with every hue rotated 180 degrees. Rotating
     // all orbital hues rotates the summed hue vector, so that is just
-    // hue + 1/2. A single detection becomes its orbital colour as ink, empty
+    // hue + 1/2. A single detection becomes its orbital color as ink, empty
     // space is white, and overlaps mix toward black.
     rgb = vec3(1.0) - hsv2rgb(vec3(fract(hue + 0.5), purity, amount));
   }

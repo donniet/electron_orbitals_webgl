@@ -15,6 +15,7 @@
 
 const enc = new TextEncoder();
 
+// DT: concat is repeated in mux-mp4.js and mux.webm.js
 // Concatenate byte arrays.
 function concat(parts) {
   const n = parts.reduce((s, p) => s + p.length, 0);
@@ -52,15 +53,14 @@ function fullBox(type, version, flags, ...payload) {
 
 const MATRIX = fields(u32(0x10000), u32(0), u32(0), u32(0), u32(0x10000), u32(0), u32(0), u32(0), u32(0x40000000));
 
-/**
- * Build an MP4 file.
- *   width, height   coded size
- *   timescale       ticks per second (e.g. fps * 1000)
- *   frameDuration   ticks per frame
- *   description     avcC bytes (ArrayBuffer or view) from the encoder
- *   chunks          [{ data: Uint8Array, pts: ticks, key: boolean }] in decode order
- * Returns a Uint8Array.
- */
+// Build an MP4 file.
+//   width, height   coded size
+//   timescale       ticks per second (e.g. fps * 1000)
+//   frameDuration   ticks per frame
+//   description     avcC bytes (ArrayBuffer or view) from the encoder
+//   chunks          [{ data: Uint8Array, pts: ticks, key: boolean }] in decode 
+//                   order
+// Returns a Uint8Array. 
 export function muxMp4({ width, height, timescale, frameDuration, description, chunks }) {
   if (!chunks.length) throw new Error('muxMp4: no frames');
   const avcC = new Uint8Array(description instanceof ArrayBuffer ? description : description.buffer,

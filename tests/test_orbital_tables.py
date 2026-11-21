@@ -180,7 +180,7 @@ class TestOddClosedForms(unittest.TestCase):
 
 
 class TestRadialTable(unittest.TestCase):
-    """q2 = R^2 / u^(2l) table and row extents (nearest-detection colouring)."""
+    """q2 = R^2 / u^(2l) table and row extents (nearest-detection coloring)."""
 
     def test_values_and_closed_forms(self):
         q2 = gt.load_radial_tables()

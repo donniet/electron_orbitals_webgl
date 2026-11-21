@@ -15,7 +15,7 @@ used by the cut-away view, and the radial factor itself
     q2(u) = R(u)^2 / u^(2l)
 
 with each row's extent (the radius holding all but RADIAL_TAIL of the
-electron), used to march along rays for the "nearest detection" colouring.
+electron), used to march along rays for the "nearest detection" coloring.
 Output:
 
     data/orbital_tables.bin         float32 little-endian, [row][i][RGBA]

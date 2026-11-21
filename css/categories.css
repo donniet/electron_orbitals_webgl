@@ -1,4 +1,4 @@
-/* Periodic-table category colours, shared by the app and the print page.
+/* Periodic-table category colors, shared by the app and the print page.
    js/tile.js reads them (--cat-<slug>) to draw element tiles. */
 :root {
   --cat-reactive-nonmetal: #3f8f5a;

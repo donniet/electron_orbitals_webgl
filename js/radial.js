@@ -7,7 +7,7 @@ import { SUBSHELLS, orbitalsOf } from './orbitals.js';
 
 const BOHR_PM = 52.9177;
 
-// Colour = shell n, validated on the dark panel (#151922) in shell order,
+// Color = shell n, validated on the dark panel (#151922) in shell order,
 // i.e. neighbouring shells, which overlap in r (n5/n6 sit in the CVD
 // 6-8 band, so curves are also direct-labelled). Two modes:
 //  - subshells: one series per subshell, line style = l
@@ -33,12 +33,12 @@ export function radialMode(state, el) {
 }
 
 // A vs B: each atom's total radial density, A solid and B dashed, in two
-// colours validated as a pair on the dark panel (also the n=3 / n=2 shell
-// colours).
+// colors validated as a pair on the dark panel (also the n=3 / n=2 shell
+// colors).
 const COMPARE_COLORS = ['#0f91bd', '#b88b05'];
 const COMPARE_DASH = [[], [6, 3]];
 
-// Small inline line sample for legends/tooltips (same colour + dash as the plot).
+// Small inline line sample for legends/tooltips (same color + dash as the plot).
 function lineSample(color, dash = []) {
   const da = dash.length ? ` stroke-dasharray="${dash.join(' ')}"` : '';
   return `<svg width="18" height="6" aria-hidden="true"><line x1="0" y1="3" x2="18" y2="3" ` +
@@ -46,7 +46,7 @@ function lineSample(color, dash = []) {
 }
 
 // Neutral inks (axes, grid, labels, the total curve) per surface: the dark
-// panel, or white paper on the print page. The series colours are the same
+// panel, or white paper on the print page. The series colors are the same
 // on both; they were also validated on #ffffff (same results: contrast,
 // lightness and normal-vision PASS, CVD n5/n6 in the 6-8 band, which the
 // direct labels cover).

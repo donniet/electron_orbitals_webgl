@@ -154,7 +154,7 @@ export function createRecorderUI(ctx) {
       h('input', { type: 'radio', name: 'rb-dur', checked: settings.durMode === 'seconds' || !period,
         onchange: () => { settings.durMode = 'seconds'; render(); } }), ' ', secs, ' s');
 
-    const grain = h('span', { className: 'rb-radios', title: 'Output pixels per noise sample. 2 px keeps each detection\'s colour exact in compressed video and makes smaller files.' },
+    const grain = h('span', { className: 'rb-radios', title: 'Output pixels per noise sample. 2 px keeps each detection\'s color exact in compressed video and makes smaller files.' },
       [1, 2].map(g => h('label', {}, h('input', { type: 'radio', name: 'rb-grain', checked: settings.grain === g,
         onchange: () => { settings.grain = g; render(); } }), ` ${g} px`)));
 

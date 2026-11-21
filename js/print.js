@@ -7,7 +7,7 @@
 // main.js):
 //   z, z2               atom A and optional atom B (side by side)
 //   q=w,x,y,z | zoom    orientation quaternion and zoom (default: the app's)
-//   density, kmax, gamma, equalize=1, scale=fixed, cut=1, colour=blend,
+//   density, kmax, gamma, equalize=1, scale=fixed, cut=1, color=blend,
 //   overlay=0, radial=shell|subshell|compare   as in the app
 //   hide=i,j,...        orbital indices hidden (in both panes, like the app)
 // Print-page options (also in its toolbar):
@@ -76,7 +76,7 @@ const state = {
   equalize: params.get('equalize') === '1',
   fixedScale: params.get('scale') === 'fixed',
   cut: params.get('cut') === '1',
-  colour: params.get('colour') === 'blend' ? 'blend' : 'nearest',
+  color: params.get('color') === 'blend' ? 'blend' : 'nearest',
   overlay: params.get('overlay') !== '0',
   radialMode: ['shell', 'subshell', 'compare'].includes(params.get('radial')) ? params.get('radial') : 'auto',
   mode: 'white',
@@ -155,7 +155,7 @@ function caption(W, H) {
     `exposure ${state.density.toFixed(state.density < 0.1 ? 3 : 2)}` + (state.equalize ? ' (equalized, not to scale)' : ''),
     `full brightness at ${state.kMax} counts`,
     `gamma ${state.gamma.toFixed(2)}`,
-    state.colour === 'nearest' ? 'nearest colour' : 'blended colour',
+    state.color === 'nearest' ? 'nearest color' : 'blended color',
   ];
   if (state.cut) parts.push('cut away: half behind the nucleus');
   if (state.fixedScale) parts.push('fixed scale');

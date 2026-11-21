@@ -4,7 +4,7 @@ Renders atomic electron orbitals in WebGL using a probabilistic ray-tracing
 algorithm. Each frame a new random seed is chosen (debug option: seed == frame
 number). For each pixel's ray and each orbital, the expected number of electron
 detections along the ray is computed from the orbital's probability density,
-and a Poisson-distributed count is sampled from it. The counts set the colour
+and a Poisson-distributed count is sampled from it. The counts set the color
 of that pixel, so the cloud looks like live, static-y noise.
 
 Supported elements: hydrogen through radon (Z = 1–86), with s, p, d and f
@@ -23,7 +23,7 @@ on) is generated from cited sources into `data/elements.json`.
 
 Each orbital is assigned a hue: one per angular shape, paler for inner shells.
 Each orbital is calculated independently in the shader; detection counts go
-through a tone curve, the per-orbital colours are added together, and the
+through a tone curve, the per-orbital colors are added together, and the
 result is converted to RGB. On the dark background detections light up; the
 white background is its exact "ink on paper" dual. The view is scaled so the
 element's Rahm atomic radius (where the free atom's electron density falls to

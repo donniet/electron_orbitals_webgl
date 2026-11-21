@@ -474,7 +474,7 @@ function renderFrame(z, opts = {}) {
     seed: opts.seed ?? 1, density: opts.density ?? 0.3,
     equalize: opts.equalize ?? false, kMax: opts.kMax ?? 4, gamma: opts.gamma ?? 0.5,
     mode: opts.mode || 'dark', visible: opts.visible || ORBITALS.map(() => true), fixedScale: opts.fixedScale ?? false,
-    cut: opts.cut ?? false, colour: opts.colour || 'blend',
+    cut: opts.cut ?? false, color: opts.color || 'blend',
   };
   r.render(state);
   const px = new Uint8Array(256 * 256 * 4);
@@ -634,7 +634,7 @@ test('GPU: Sc 3d_xy viewed down z is a four-leaf clover', () => {
 });
 
 test('GPU: white mode is the exact dual of dark mode', () => {
-  // white = 1 - dark(hue + 180deg). For an HSV colour, rotating the hue by
+  // white = 1 - dark(hue + 180deg). For an HSV color, rotating the hue by
   // 180deg maps each channel x -> max + min - x, so per pixel:
   //   white = 255 - (max + min - dark)
   const opts = { seed: 3, equalize: true, density: 0.3 };
@@ -835,7 +835,7 @@ test('GPU: cut-away applies to both panes', () => {
   shift.forEach((s, j) => assert(s > 2, `pane ${j} centroid shift ${s.toFixed(2)} px should be > 2`));
 });
 
-test('GPU: nearest colour shows the front lobe (neon 2px vs 2pz, tilted)', () => {
+test('GPU: nearest color shows the front lobe (neon 2px vs 2pz, tilted)', () => {
   // Rotating +0.8 rad about view y: atom +x goes right and behind, atom +z
   // right and in front, so on the right 2pz is nearer and on the left 2px.
   // Their projections overlap, so blend mode mixes both on each side.
@@ -850,10 +850,10 @@ test('GPU: nearest colour shows the front lobe (neon 2px vs 2pz, tilted)', () =>
     return ((h / 6) % 1 + 1) % 1;
   };
   const hd = (a, b) => Math.min(Math.abs(a - b), 1 - Math.abs(a - b));
-  const share = colour => {     // fraction of 2pz-coloured pixels among classified ones, [left, right]
+  const share = color => {     // fraction of 2pz-colored pixels among classified ones, [left, right]
     const n = [[0, 0], [0, 0]];
     for (let s = 1; s <= 3; s++) {
-      const px = renderFrame(10, { seed: s, density: 2, q, visible, colour, kMax: 1, gamma: 1, equalize: true });
+      const px = renderFrame(10, { seed: s, density: 2, q, visible, color, kMax: 1, gamma: 1, equalize: true });
       for (let y = 64; y < 192; y++) for (let x = 0; x < 256; x++) {
         if (Math.abs(x - 128) < 12) continue;
         const i = 4 * (y * 256 + x), h = hueOf(px[i], px[i + 1], px[i + 2]);

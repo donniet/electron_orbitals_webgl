@@ -35,7 +35,7 @@ export const FPS_CHOICES = [24, 30, 50, 60];
 // codecs' motion prediction, so these are high by usual video standards.
 // Calibrated by eye and PSNR on source vs decoded frames (1280x720, 60 fps):
 // at 0.3 the dense core smears into smooth blobs; 0.8 with 2 px grain is the
-// first setting that keeps the grain and its colours.
+// first setting that keeps the grain and its colors.
 export const QUALITY = {
   standard: { label: 'Standard', bpp: 0.3 },
   high: { label: 'High', bpp: 0.8 },

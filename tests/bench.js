@@ -8,7 +8,7 @@ const zs = (params.get('z') || '1,10,18,36').split(',').map(Number)
   .filter(z => z >= 1 && z <= ELEMENTS.length);
 const size = +params.get('size') || 800;
 const frames = +params.get('frames') || 20;
-const colour = params.get('colour') === 'blend' ? 'blend' : 'nearest';   // app default: nearest
+const color = params.get('color') === 'blend' ? 'blend' : 'nearest';   // app default: nearest
 const cut = params.get('cut') === '1';
 
 const tables = await loadTables();
@@ -16,7 +16,7 @@ const canvas = document.createElement('canvas');
 canvas.width = canvas.height = size;
 const r = createRenderer(canvas, tables);
 const px = new Uint8Array(4);
-const lines = [`size ${size}x${size}, ${frames} frames each, colour ${colour}${cut ? ', cut' : ''}`];
+const lines = [`size ${size}x${size}, ${frames} frames each, color ${color}${cut ? ', cut' : ''}`];
 const results = {};
 
 for (const z of zs) {
@@ -24,7 +24,7 @@ for (const z of zs) {
   const state = {
     element: el, orientation: [0, 0, 0, 1], zoom: 1, seed: 1, density: 1,
     equalize: false, kMax: 4, gamma: 0.5, mode: 'dark', fixedScale: false,
-    visible: ORBITALS.map(() => true), colour, cut,
+    visible: ORBITALS.map(() => true), color, cut,
   };
   r.render(state);                                    // warm-up
   r.gl.readPixels(0, 0, 1, 1, r.gl.RGBA, r.gl.UNSIGNED_BYTE, px);

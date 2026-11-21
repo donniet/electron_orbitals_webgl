@@ -58,6 +58,7 @@ export function electronConfig(subshellOcc) {
     .map(s => s.id + sup(subshellOcc[s.id])).join(' ');
 }
 
+// DT: Could the electron configurations be static in the ../data/elements.js?
 // Noble-gas cores for shorthand configurations (largest first).
 const AR = { '1s': 2, '2s': 2, '2p': 6, '3s': 2, '3p': 6 };
 const KR = { ...AR, '3d': 10, '4s': 2, '4p': 6 };
@@ -87,6 +88,10 @@ export function periodOf(z) {
   return z <= 2 ? 1 : z <= 10 ? 2 : z <= 18 ? 3 : z <= 36 ? 4 : z <= 54 ? 5 : 6;
 }
 
+// DT: Similar to above, could all of this be static in the ../data/elements.js?
+//     Perhaps we'd need this if we were doing isotopes, but we could load all
+//     common isotopes in the elements.json without too much extra trouble, 
+//     correct?
 function fromJson(d) {
   return {
     z: d.z, symbol: d.symbol, name: d.name, mass: d.mass, group: d.group,

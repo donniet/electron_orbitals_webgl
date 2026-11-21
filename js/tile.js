@@ -1,8 +1,8 @@
-// Periodic-table tile (category colour, Z, symbol, atomic mass), drawn with
+// Periodic-table tile (category color, Z, symbol, atomic mass), drawn with
 // the 2D canvas API so the same rendering is used in the side-panel card
 // and on the canvas overlay (and therefore in saved PNGs).
 //
-// Category colours stay defined once, as CSS custom properties
+// Category colors stay defined once, as CSS custom properties
 // (--cat-<slug> in css/style.css); this module reads them from there.
 
 export const TILE_W = 84;   // CSS px at scale 1

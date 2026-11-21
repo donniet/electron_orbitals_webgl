@@ -24,7 +24,7 @@ static-y noise. Two atoms can be shown side by side (A/B comparison).
   # print:  http://localhost:8000/print.html?z=26   (the app's Print… button passes the view)
   # tests:  http://localhost:8000/tests/test.html
   # video:  http://localhost:8000/tests/video.html   (real time; see below)
-  # bench:  http://localhost:8000/tests/bench.html?z=36,86   (also &colour=blend, &cut=1)
+  # bench:  http://localhost:8000/tests/bench.html?z=36,86   (also &color=blend, &cut=1)
   ```
 
   `http.server` lets browsers cache. After editing JS or `.glsl` files,
@@ -35,7 +35,7 @@ static-y noise. Two atoms can be shown side by side (A/B comparison).
 
 | Path | Role |
 |---|---|
-| `index.html`, `css/style.css` | Page and styles (responsive: stacked layout in portrait/narrow, compact strip on short screens). `css/categories.css`: element-category colours, shared with the print page. |
+| `index.html`, `css/style.css` | Page and styles (responsive: stacked layout in portrait/narrow, compact strip on short screens). `css/categories.css`: element-category colors, shared with the print page. |
 | `print.html`, `js/print.js`, `css/print.css` | Print page: one frame on white at 300 px/in in a box (Letter/A4, grain 1/2/4; a pair fills the width at 4:3, a single atom gets one pane's box, centred), ruled notes above and below; page 2 has the element card, orbital table, radial density (light theme) and model notes. State comes in the URL (`printParams` in `main.js`). |
 | `js/main.js` | App state, frame loop, resize, render scale (Auto/Full/Half), spin, selection actions. |
 | `js/renderer.js` | WebGL renderer: `renderViews` (one pane per atom), `splitViews`, view geometry (`viewRadius`, `baseHalf`), equalize gains, d/f peak search. |
@@ -66,7 +66,7 @@ static-y noise. Two atoms can be shown side by side (A/B comparison).
   adds `2·uCut·(odd terms)` to the whole-ray column (uCut = −1: the half
   behind the plane, view z < 0, shown at double gain). It works only because
   the plane passes through the nucleus; a movable plane would need 2-D tables.
-- **Nearest colour** (`uColourMode` 1): per-orbital counts are unchanged; for
+- **Nearest color** (`uColorMode` 1): per-orbital counts are unchanged; for
   each orbital with k > 0 the nearest of its k detections sits at cumulative
   fraction 1 − v^(1/k) from the front. `nearestDepthRef` finds it by marching
   q2(r)·A(t)² (`data/orbital_tables_radial.bin`, q2 = R²/u^(2l); `angularPoly`
@@ -84,7 +84,7 @@ static-y noise. Two atoms can be shown side by side (A/B comparison).
   `devicePixelContentBoxSize`). Reduced resolution renders 1/k into a
   framebuffer and blits by exactly k; pane splits fall on multiples of k.
   Non-integer browser rescaling of per-pixel noise causes moiré.
-- **Colour:** hue = angular shape; chroma by depth (valence vivid, inner
+- **Color:** hue = angular shape; chroma by depth (valence vivid, inner
   shells paler; s stays vivid). White background is the exact dual of dark
   (negative of the 180°-hue-rotated dark image) — not a bespoke mapping.
 - **View scale:** the Rahm atomic radius ring fills 90% of the shorter
@@ -142,7 +142,7 @@ timeout 240 google-chrome --headless=new --no-sandbox --use-angle=swiftshader \
   Look at them; check overlaps, clipping and both themes.
 - **Reproducible frames:** URL options `?z=26&debug=1&paused=1&spin=0&res=full`
   (also `z2=` for a second atom, `mode=white`, `equalize=1`, `scale=fixed`, `cut=1`,
-  `colour=blend` (default is nearest), `record=1`,
+  `color=blend` (default is nearest), `record=1`,
   `density=`). Use these for **pixel-identical before/after comparisons** when a
   change should not alter output (refactors, file moves).
 - For numeric/visual claims (noise quality, alignment, performance), measure:
@@ -156,11 +156,11 @@ timeout 240 google-chrome --headless=new --no-sandbox --use-angle=swiftshader \
   changing either; tune tests only with a stated reason.
 - Wrap long-running commands in `timeout`.
 
-## Charts and colour
+## Charts and color
 
-Chart colours are validated with the dataviz palette validator (lightness band,
+Chart colors are validated with the dataviz palette validator (lightness band,
 CVD separation, contrast against the dark panel `#151922`). The radial chart
-uses colour = shell n and dash = l (s solid, p dashed, d dotted, f dash-dot);
+uses color = shell n and dash = l (s solid, p dashed, d dotted, f dash-dot);
 A vs B uses solid/dashed with a validated pair. Re-validate when adding series.
 
 ## Working agreements

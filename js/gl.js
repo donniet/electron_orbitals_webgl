@@ -1,8 +1,13 @@
 // Minimal WebGL2 helpers.
 
 export function createContext(canvas) {
-  const gl = canvas.getContext('webgl2', { antialias: false, preserveDrawingBuffer: true });
-  if (!gl) throw new Error('WebGL2 is not available in this browser.');
+  const gl = canvas.getContext('webgl2', { 
+    antialias: false, preserveDrawingBuffer: true 
+  });
+
+  if (!gl) 
+    throw new Error('WebGL2 is not available in this browser.');
+
   return gl;
 }
 
@@ -23,10 +28,14 @@ function compile(gl, type, src) {
 // line numbers of the .glsl file.
 export function withDefines(src, defines = {}) {
   const entries = Object.entries(defines);
-  if (entries.length === 0) return src;
+  if (entries.length === 0) 
+    return src;
+    
   const nl = src.indexOf('\n');
   const head = src.slice(0, nl + 1), body = src.slice(nl + 1);
-  if (!/^\s*#version/.test(head)) throw new Error('Shader source must start with #version');
+  if (!/^\s*#version/.test(head)) 
+    throw new Error('Shader source must start with #version');
+
   const lines = entries.map(([k, v]) => `#define ${k} ${v}`).join('\n');
   return `${head}${lines}\n#line 2\n${body}`;
 }
@@ -53,11 +62,16 @@ export function createProgram(gl, vertSrc, fragSrc, { defines = {} } = {}) {
 // Upload float tables as an N x rows RGBA32F texture (or R32F with
 // { channels: 1 }). Sampled with texelFetch + manual lerp, so NEAREST
 // filtering is all that is required.
-export function createTableTexture(gl, data, n, rows = 1, { channels = 4 } = {}) {
+export function createTableTexture(gl, data, n, 
+  rows = 1, { channels = 4 } = {}) 
+{
   const tex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, tex);
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-  const [internal, format] = channels === 1 ? [gl.R32F, gl.RED] : [gl.RGBA32F, gl.RGBA];
+
+  const [internal, format] = channels === 1 ? 
+    [gl.R32F, gl.RED] : [gl.RGBA32F, gl.RGBA];
+
   gl.texImage2D(gl.TEXTURE_2D, 0, internal, n, rows, 0, format, gl.FLOAT, data);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);

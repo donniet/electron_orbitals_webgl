@@ -10,7 +10,7 @@
 //   ?equalize=1   equalize orbital brightness (default: true relative densities)
 //   ?scale=fixed  same view scale for every element (compare sizes)
 //   ?cut=1        cut-away: show only the half of the cloud behind the nucleus
-//   ?colour=blend    mix every orbital's colours (default: nearest, the orbital
+//   ?color=blend    mix every orbital's colors (default: nearest, the orbital
 //                    whose detection is nearest the viewer)
 //   ?spin=0       start without the slow default rotation
 //   ?res=full     noise canvas resolution: auto (default) | full | half
@@ -48,7 +48,7 @@ const state = {
   equalize: params.get('equalize') === '1',
   fixedScale: params.get('scale') === 'fixed',
   cut: params.get('cut') === '1',  // cut-away: only the cloud behind the nucleus
-  colour: params.get('colour') === 'blend' ? 'blend' : 'nearest',
+  color: params.get('color') === 'blend' ? 'blend' : 'nearest',
   radialMode: 'auto',            // 'auto' | 'shell' | 'subshell'
   spin: defaultSpin(),           // { axis, rate } in view space, or null
   kMax: +params.get('kmax') || 4,
@@ -177,7 +177,7 @@ const app = {
   setEqualize(b) { state.equalize = b; syncControls(state); dirty = true; },
   setFixedScale(b) { state.fixedScale = b; syncControls(state); dirty = true; },
   setCut(b) { state.cut = b; syncControls(state); dirty = true; },
-  setColour(m) { state.colour = m; syncControls(state); dirty = true; },
+  setColor(m) { state.color = m; syncControls(state); dirty = true; },
   setRadialMode(m) { state.radialMode = m; radialKey = ''; syncRadialButtons(); dirty = true; },
   setMode(m) { state.mode = m; syncControls(state); dirty = true; },
   setPaused(p) { state.paused = p; syncControls(state); },
@@ -252,7 +252,7 @@ function printParams(s) {
   if (s.equalize) p.set('equalize', '1');
   if (s.fixedScale) p.set('scale', 'fixed');
   if (s.cut) p.set('cut', '1');
-  if (s.colour !== 'nearest') p.set('colour', s.colour);
+  if (s.color !== 'nearest') p.set('color', s.color);
   if (!s.overlay) p.set('overlay', '0');
   if (s.radialMode !== 'auto') p.set('radial', s.radialMode);
   const hidden = s.visible.flatMap((v, i) => (v ? [] : [i]));

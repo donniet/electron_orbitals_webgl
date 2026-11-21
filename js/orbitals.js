@@ -76,7 +76,7 @@ const F_SHAPES = [
   { m: 'y(3x2-y2)', label: 'y(3x²−y²)', C: cubicTensor([[[2, 1, 0], 3 * FE], [[0, 3, 0], -FE]]) },
 ];
 
-// Render colours. Hue encodes the angular shape (chroma, the weight of the
+// Render colors. Hue encodes the angular shape (chroma, the weight of the
 // hue, depends on the element: see orbitalChroma below).
 //  s: warm hues by shell (concentric shells stay distinguishable)
 //  p: one hue per axis in every shell
@@ -126,6 +126,8 @@ export function angularCoefs(o) {
   return out;
 }
 
+// DT: Why is this different from Aufbau filling order (AUFBAU constant above)?
+//     Do we need both?
 // Canonical (shader) order. Periods 1-4 keep their original order and new
 // subshells are appended, so frames for H-Kr consume random numbers in the
 // same order as before.

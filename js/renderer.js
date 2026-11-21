@@ -191,7 +191,7 @@ export function createRenderer(canvas, tables) {
    *   baseHalf  - optional animated base half-extent (see view.js),
    *   bohrPerPixel - optional fixed scale (video recording; overrides the above),
    *   mode      - 'dark' | 'white',
-   *   colour    - 'blend' (every orbital's detections mixed) | 'nearest'
+   *   color    - 'blend' (every orbital's detections mixed) | 'nearest'
    *               (only the orbital with the detection nearest the viewer),
    *   visible   - boolean per orbital
    * }
@@ -256,7 +256,7 @@ export function createRenderer(canvas, tables) {
     gl.uniform1f(u.uGamma, state.gamma);
     gl.uniform1i(u.uMode, state.mode === 'white' ? 1 : 0);
     gl.uniform1f(u.uCut, state.cut ? -1 : 0);              // every pane
-    gl.uniform1i(u.uColourMode, state.colour === 'nearest' ? 1 : 0);
+    gl.uniform1i(u.uColorMode, state.color === 'nearest' ? 1 : 0);
 
     const geos = views.map(({ element: el, visible = ALL_VISIBLE, rect }) => {
       const bw = Math.ceil(rect.w / k), bh = Math.ceil(rect.h / k);
