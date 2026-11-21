@@ -8,7 +8,7 @@ const zs = (params.get('z') || '1,10,18,36').split(',').map(Number)
   .filter(z => z >= 1 && z <= ELEMENTS.length);
 const size = +params.get('size') || 800;
 const frames = +params.get('frames') || 20;
-const colour = params.get('colour') === 'nearest' ? 'nearest' : 'blend';
+const colour = params.get('colour') === 'blend' ? 'blend' : 'nearest';   // app default: nearest
 const cut = params.get('cut') === '1';
 
 const tables = await loadTables();

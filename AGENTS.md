@@ -23,7 +23,7 @@ static-y noise. Two atoms can be shown side by side (A/B comparison).
   # app:    http://localhost:8000/
   # tests:  http://localhost:8000/tests/test.html
   # video:  http://localhost:8000/tests/video.html   (real time; see below)
-  # bench:  http://localhost:8000/tests/bench.html?z=36,86   (also &colour=nearest, &cut=1)
+  # bench:  http://localhost:8000/tests/bench.html?z=36,86   (also &colour=blend, &cut=1)
   ```
 
   `http.server` lets browsers cache. After editing JS or `.glsl` files,
@@ -140,7 +140,7 @@ timeout 240 google-chrome --headless=new --no-sandbox --use-angle=swiftshader \
   Look at them; check overlaps, clipping and both themes.
 - **Reproducible frames:** URL options `?z=26&debug=1&paused=1&spin=0&res=full`
   (also `z2=` for a second atom, `mode=white`, `equalize=1`, `scale=fixed`, `cut=1`,
-  `colour=nearest`, `record=1`,
+  `colour=blend` (default is nearest), `record=1`,
   `density=`). Use these for **pixel-identical before/after comparisons** when a
   change should not alter output (refactors, file moves).
 - For numeric/visual claims (noise quality, alignment, performance), measure:

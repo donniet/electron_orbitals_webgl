@@ -10,7 +10,8 @@
 //   ?equalize=1   equalize orbital brightness (default: true relative densities)
 //   ?scale=fixed  same view scale for every element (compare sizes)
 //   ?cut=1        cut-away: show only the half of the cloud behind the nucleus
-//   ?colour=nearest  colour by the orbital with the detection nearest the viewer
+//   ?colour=blend    mix every orbital's colours (default: nearest, the orbital
+//                    whose detection is nearest the viewer)
 //   ?spin=0       start without the slow default rotation
 //   ?res=full     noise canvas resolution: auto (default) | full | half
 //   ?kmax=4       counts for full brightness
@@ -51,7 +52,7 @@ const state = {
   equalize: params.get('equalize') === '1',
   fixedScale: params.get('scale') === 'fixed',
   cut: params.get('cut') === '1',  // cut-away: only the cloud behind the nucleus
-  colour: params.get('colour') === 'nearest' ? 'nearest' : 'blend',
+  colour: params.get('colour') === 'blend' ? 'blend' : 'nearest',
   radialMode: 'auto',            // 'auto' | 'shell' | 'subshell'
   spin: defaultSpin(),           // { axis, rate } in view space, or null
   kMax: +params.get('kmax') || 4,

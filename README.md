@@ -47,11 +47,12 @@ The server lets the browser cache files. If you edit the code, hard-reload
   scale), *Fixed scale* (the same zoom for every element, so sizes can be
   compared), *Cut away front half* (only the cloud behind a plane through the
   nucleus, parallel to the screen, at double brightness: rotate the atom to
-  see which lobes point toward or away from you), *Colour: Blend / Nearest*
-  (Nearest shows each pixel only in the colour of the orbital whose detection
-  is nearest to you, like an opaque surface; with the cut-away this gives a
-  coloured cross-section), the tone curve, a dark or white background, and
-  noise resolution.
+  see which lobes point toward or away from you), *Colour: Nearest / Blend*
+  (Nearest, the default, shows each pixel only in the colour of the orbital
+  whose detection is nearest to you, like an opaque surface; with the
+  cut-away this gives a coloured cross-section. Blend mixes the colours of
+  every detection along the line of sight), the tone curve, a dark or white
+  background, and noise resolution.
 - **Record a video:** click the red dot at the top right of the view. The
   periodic table makes way for the recording controls:
   - *Resolution:* the current view, 720p to 4K, square or portrait. Dashed
@@ -69,7 +70,7 @@ The server lets the browser cache files. If you edit the code, hard-reload
   it is shown. Per-pixel noise is hard to compress, so files are large (High
   at 1080p60 is about 100 Mbit/s). Needs a browser with WebCodecs.
 - **Keys:** space pause · r reset view · s save PNG · c cut away ·
-  n nearest colour · ←/→ element · Esc stop comparing.
+  n blend / nearest colour · ←/→ element · Esc stop comparing.
 
 ### Reading the picture
 
@@ -96,7 +97,7 @@ for reproducible screenshots:
 | `equalize=1` | Equalize orbital brightness. |
 | `scale=fixed` | Same view scale for every element. |
 | `cut=1` | Cut away the front half of the cloud. |
-| `colour=nearest` | Colour by the nearest detection (default `blend`). |
+| `colour=blend` | Mix every orbital's colours (default `nearest`: colour by the nearest detection). |
 | `density=0.5` | Exposure. |
 | `kmax=4`, `gamma=0.5` | Tone curve: counts for full brightness, and gamma. |
 | `res=full` | Noise resolution: `auto` (default), `full` or `half`. |
