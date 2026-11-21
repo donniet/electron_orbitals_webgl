@@ -103,7 +103,8 @@ html, body {
 }
 
 /* The simulation, in a box that marks exactly the bounds of the image. */
-.sim { margin: 0; break-inside: avoid; }
+/* Width set by js/print.js: the content width, or one pane's for one atom. */
+.sim { margin: 0 auto; max-width: 100%; break-inside: avoid; }
 .sim-box {
   position: relative;
   outline: 1pt solid var(--ink);   /* outside the image: covers none of it */

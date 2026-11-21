@@ -27,9 +27,11 @@ import { createRadialPlot, radialMode } from './radial.js';
 const params = new URLSearchParams(location.search);
 const $ = sel => document.querySelector(sel);
 
-// Paper sizes and margins (inches). The image is 300 pixels per inch at
-// the full content width, 4:3, in a multiple of 4 pixels each way so every
-// grain divides it.
+// Paper sizes and margins (inches). The image is 300 pixels per inch. A
+// pair fills the content width at 4:3 (two side-by-side panes); a single
+// atom gets a box the size of one of those panes, centred, so it prints
+// at the same size and with the same overlay as in a pair. Sizes are
+// multiples of 4 pixels so every grain divides them.
 const PAPERS = {
   letter: { size: 'letter', w: 8.5, h: 11, margin: 0.5 },
   a4: { size: 'A4', w: 210 / 25.4, h: 297 / 25.4, margin: 12 / 25.4 },
@@ -90,17 +92,20 @@ const opts = {
 const fixedSeed = params.has('seed') ? parseInt(params.get('seed'), 10) >>> 0 : null;
 
 // ------------------------------------------------------------ page size
-// The box spans the content width; its pixel size follows from the paper.
+// Image size (px) and its width on paper (CSS px) for this paper.
 function imageSize(paper) {
   const p = PAPERS[paper];
   const contentIn = p.w - 2 * p.margin;
-  const W = Math.floor((contentIn * IMAGE_DPI) / 4) * 4;
-  const H = Math.floor((W * ASPECT) / 4) * 4;
-  return { W, H, cssW: contentIn * CSS_DPI };
+  const pairW = Math.floor((contentIn * IMAGE_DPI) / 4) * 4;
+  const H = Math.floor((pairW * ASPECT) / 4) * 4;
+  if (B) return { W: pairW, H, cssW: contentIn * CSS_DPI };
+  const W = splitViews(pairW, H, 4, 2)[0].w;           // one pane of a pair
+  return { W, H, cssW: (W / pairW) * contentIn * CSS_DPI };
 }
 
 function applyPaper() {
   const p = PAPERS[opts.paper];
+  $('.sim').style.width = `${imageSize(opts.paper).cssW}px`;
   $('#page-size').textContent =
     `@page { size: ${p.size}; margin: ${p.margin}in; }\n` +
     `:root { --paper-w: ${p.w}in; --paper-h: ${p.h}in; --margin: ${p.margin}in; }`;
@@ -272,8 +277,10 @@ function renderLegend() {
 function renderRadial() {
   const { W, H } = imageSize(opts.paper);
   const plot = createRadialPlot($('#radial'), null, $('#radial-legend'), { theme: 'light', dpr: 4 });
-  // Same x range as the app's inset: A's view geometry for the whole box.
-  plot.draw(state, viewGeometry(A, W, H, state.zoom, state.fixedScale));
+  // x range: A's view radius (the shorter half-dimension of a view at this
+  // zoom), as in the app's inset, whatever the box's shape.
+  const side = Math.min(W, H);
+  plot.draw(state, viewGeometry(A, side, side, state.zoom, state.fixedScale));
   if (radialMode(state, A) === 'compare') $('#radial').setAttribute('aria-label',
     `Total radial electron density of ${A.name} and ${B.name} versus distance from the nucleus`);
 }

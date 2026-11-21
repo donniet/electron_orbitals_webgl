@@ -899,6 +899,22 @@ await testAsync('print page: boxed 300 dpi image on white, details for both atom
   f.remove();
 });
 
+await testAsync('print page: a single atom gets a centred box the size of one pane of a pair', async () => {
+  const f = await loadFrame('../print.html?z=26&seed=7&paper=letter&grain=2');
+  const doc = f.contentDocument;
+  const img = doc.getElementById('sim-img');
+  // Letter pair 2248 x 1684 -> one pane 1124 x 1684.
+  assert(img.naturalWidth === 1124 && img.naturalHeight === 1684, `image ${img.naturalWidth}x${img.naturalHeight}`);
+  const box = doc.getElementById('sim-box').getBoundingClientRect();
+  const page = doc.querySelector('.page1 .head').getBoundingClientRect();
+  near(box.width, page.width / 2, 1, 'half the content width');
+  near(box.left + box.width / 2, page.left + page.width / 2, 1, 'centred');
+  const ir = img.getBoundingClientRect();
+  near(ir.left, box.left, 0.5, 'box left'); near(ir.right, box.right, 0.5, 'box right');
+  near(ir.top, box.top, 0.5, 'box top'); near(ir.bottom, box.bottom, 0.5, 'box bottom');
+  f.remove();
+});
+
 // ------------------------------------------------------------ report
 const pass = results.filter(r => r.ok).length;
 const out = document.getElementById('results');
