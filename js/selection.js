@@ -15,6 +15,15 @@ export function atomsOf(state) {
   return state.second ? [state.element, state.second] : [state.element];
 }
 
+/**
+ * The panes to draw, [{ element, visible }] for A (and B). Visibility is
+ * shared: every pane gets state.visible, so hiding an orbital slot hides it
+ * in both atoms (used by the live view, video recording and the print page).
+ */
+export function paneViews(state) {
+  return atomsOf(state).map(element => ({ element, visible: state.visible }));
+}
+
 /** Subshell ids occupied in any of the atoms. */
 export function subshellUnion(atoms) {
   const ids = new Set();

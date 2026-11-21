@@ -25,7 +25,7 @@ import { createScaleAnimator, prefersReducedMotion, defaultOrientation } from '.
 import { loadTables } from './tables.js';
 import { attachControls } from './controls.js';
 import { buildUI, syncControls, updateElement, updateTable, updatePerf, drawOverlay } from './ui.js';
-import { atomsOf, valenceUnion, defaultExpandedShells } from './selection.js';
+import { atomsOf, paneViews, valenceUnion, defaultExpandedShells } from './selection.js';
 import { createRadialPlot, radialMode } from './radial.js';
 import { createRecorderUI } from './recordui.js';
 
@@ -281,8 +281,7 @@ const recorder = createRecorderUI({
     dpr: glCanvas.width / view.clientWidth || 1,
     panes: lastViews?.map(v => v.geo.rect) ?? [{ x: 0, y: 0, w: glCanvas.width, h: glCanvas.height }],
   }),
-  views: () => (state.second ? [state.element, state.second] : [state.element])
-    .map((element, i) => ({ element, visible: i === 0 ? state.visible : undefined })),
+  views: () => paneViews(state),
   changed: () => { dirty = true; },
   // Lay the strip out collapsed for a moment (no paint happens in between)
   // to measure it, whatever its current state.
@@ -382,15 +381,13 @@ function frame(t) {
   }
   // Ease the view scale toward the element's (or fixed) scale; with two
   // atoms, the larger of the two so their sizes compare directly.
-  const atoms = state.second ? [state.element, state.second] : [state.element];
+  const atoms = atomsOf(state);
   state.baseHalf = scaleAnim.value(Math.max(...atoms.map(el => baseHalf(el, state.fixedScale))), t);
   if (scaleAnim.animating) dirty = true;
   if (!state.paused || dirty) {
     if (state.paused && state.debugSeed) state.seed = state.frame; // keep reproducible
     const rects = splitViews(glCanvas.width, glCanvas.height, renderK, atoms.length);
-    const views = atoms.map((element, i) => ({
-      element, rect: rects[i], visible: i === 0 ? state.visible : undefined,   // second atom: all orbitals
-    }));
+    const views = paneViews(state).map((v, i) => ({ ...v, rect: rects[i] }));
     const geos = renderer.renderViews(state, renderK, views);
     lastViews = views.map((v, i) => ({ element: v.element, geo: geos[i] }));
     drawOverlay(overlay, state, lastViews);

@@ -12,7 +12,7 @@ import {
 } from '../js/math.js';
 import { createRenderer, viewGeometry, orbitalPeak, orbitalGains, MAX_VIEW_RADIUS, shapePeak, splitViews } from '../js/renderer.js';
 import { loadTables } from '../js/tables.js';
-import { atomsOf, subshellUnion, occupiedAny, valenceUnion, defaultExpandedShells, collapsedRows, tableRow } from '../js/selection.js';
+import { atomsOf, paneViews, subshellUnion, occupiedAny, valenceUnion, defaultExpandedShells, collapsedRows, tableRow } from '../js/selection.js';
 import { createScaleAnimator } from '../js/view.js';
 import { pinchZoom, ZOOM_MIN, ZOOM_MAX, flingSpin, FLING_MIN_SPEED, SPIN_MAX_RATE } from '../js/controls.js';
 
@@ -741,6 +741,46 @@ test('GPU: two atoms side by side are each centred in their own pane', () => {
       near(sy / sw, rc.y + rc.h / 2, 3, `pane ${j} centroid y (k=${k})`);
     });
   }
+});
+
+test('pane views: both atoms share the orbital visibility', () => {
+  const visible = ORBITALS.map((o, i) => i !== P('2px'));
+  const views = paneViews({ element: ELEMENTS[5], second: ELEMENTS[7], visible });
+  assert(views.length === 2 && views[0].element.z === 6 && views[1].element.z === 8, 'A, B');
+  assert(views.every(v => v.visible === visible), 'both panes get state.visible');
+  assert(paneViews({ element: ELEMENTS[5], second: null, visible }).length === 1, 'single atom');
+});
+
+test('GPU: hiding orbitals hides them in both panes (C | O)', () => {
+  const W = 320, H = 160;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const r = createRenderer(canvas, TABLES);
+  const rects = splitViews(W, H, 1, 2);
+  // Lit pixels per pane with the given orbitals shown.
+  const lit = shown => {
+    const state = { element: ELEMENTS[5], second: ELEMENTS[7], orientation: [0, 0, 0, 1], zoom: 1, seed: 3,
+      density: 2, equalize: false, kMax: 1, gamma: 1, mode: 'dark', fixedScale: false,
+      visible: ORBITALS.map((o, i) => shown.includes(i)) };
+    r.renderViews(state, 1, paneViews(state).map((v, j) => ({ ...v, rect: rects[j] })));
+    const px = new Uint8Array(W * H * 4);
+    r.gl.readPixels(0, 0, W, H, r.gl.RGBA, r.gl.UNSIGNED_BYTE, px);
+    return rects.map(rc => {
+      let n = 0;
+      for (let y = rc.y; y < rc.y + rc.h; y++) for (let x = rc.x; x < rc.x + rc.w; x++) {
+        const i = 4 * (y * W + x);
+        if (px[i] + px[i + 1] + px[i + 2] > 0) n++;
+      }
+      return n;
+    });
+  };
+  const all = lit(ORBITALS.map((o, i) => i));
+  const none = lit([]);
+  const only1s = lit([P('1s')]);
+  r.gl.getExtension('WEBGL_lose_context')?.loseContext();
+  assert(all[0] > 0 && all[1] > 0, `all shown: ${all}`);
+  assert(none[0] === 0 && none[1] === 0, `all hidden: A ${none[0]}, B ${none[1]} lit pixels`);
+  assert(only1s[0] > 0 && only1s[1] > 0 && only1s[1] < all[1], `1s only: ${only1s} (all ${all})`);
 });
 
 test('GPU: cut-away keeps the lobe behind the nucleus (boron 2px tilted away on the right)', () => {

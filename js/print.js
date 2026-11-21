@@ -9,7 +9,7 @@
 //   q=w,x,y,z | zoom    orientation quaternion and zoom (default: the app's)
 //   density, kmax, gamma, equalize=1, scale=fixed, cut=1, colour=blend,
 //   overlay=0, radial=shell|subshell|compare   as in the app
-//   hide=i,j,...        orbital indices hidden (A only, like the app)
+//   hide=i,j,...        orbital indices hidden (in both panes, like the app)
 // Print-page options (also in its toolbar):
 //   paper=letter|a4     grain=1|2|4 (image pixels per noise sample at 300/in)
 //   seed=n              fixed random seed (default: a fresh sample)
@@ -23,6 +23,7 @@ import { qNormalize } from './math.js';
 import { drawOverlay, orbitalCss, periodGroup, en, rmsPm, modelNotes, CAPACITY, SHELL_LETTER } from './ui.js';
 import { drawElementTile, TILE_W, TILE_H } from './tile.js';
 import { createRadialPlot, radialMode } from './radial.js';
+import { paneViews } from './selection.js';
 
 const params = new URLSearchParams(location.search);
 const $ = sel => document.querySelector(sel);
@@ -126,9 +127,7 @@ async function renderImage() {
   state.seed = fixedSeed ?? ((Math.random() * 4294967296) >>> 0);
   const k = opts.grain;
   const rects = splitViews(W, H, k, atoms.length);
-  const views = atoms.map((element, i) => ({
-    element, rect: rects[i], visible: i === 0 ? state.visible : undefined,   // B: all orbitals, as in the app
-  }));
+  const views = paneViews(state).map((v, i) => ({ ...v, rect: rects[i] }));   // visibility shared, as in the app
   const geos = renderer.renderViews(state, k, views);
   // Overlay at the proportions it has in a view of the box's CSS width.
   drawOverlay(overlay, state, views.map((v, i) => ({ element: v.element, geo: geos[i] })), W / cssW);
@@ -249,10 +248,10 @@ function renderLegend() {
     for (const sh of shells) {
       const idx = orbitalsOf(sh.id);
       const occ = atoms.map(el => occOf(el, idx));
-      // Hidden: only atom A's orbitals can be hidden (the app shows B whole).
-      const occA = idx.filter(i => A.occupancy[i] > 0);
-      const hid = occA.filter(i => hidden.has(i));
-      const allHidden = occA.length > 0 && hid.length === occA.length;
+      // Hidden (in both panes): of the orbitals either atom occupies.
+      const occAny = idx.filter(i => atoms.some(el => el.occupancy[i] > 0));
+      const hid = occAny.filter(i => hidden.has(i));
+      const allHidden = occAny.length > 0 && hid.length === occAny.length;
       if (allHidden) hiddenNames.push(sh.id);
       else hiddenNames.push(...hid.map(i => ORBITALS[i].label));
       const label = h('td', { class: 'orb-label' }, sh.id);
@@ -271,7 +270,7 @@ function renderLegend() {
   const note = $('#hidden-note');
   note.hidden = hiddenNames.length === 0;
   note.innerHTML = hiddenNames.length
-    ? `Not shown in the image${cmp ? ` (${A.symbol})` : ''}: ${hiddenNames.join(', ')}.` : '';
+    ? `Not shown in the image: ${hiddenNames.join(', ')}.` : '';
 }
 
 function renderRadial() {
