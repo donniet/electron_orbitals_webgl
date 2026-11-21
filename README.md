@@ -52,6 +52,22 @@ The server lets the browser cache files. If you edit the code, hard-reload
   is nearest to you, like an opaque surface; with the cut-away this gives a
   coloured cross-section), the tone curve, a dark or white background, and
   noise resolution.
+- **Record a video:** click the red dot at the top right of the view. The
+  periodic table makes way for the recording controls:
+  - *Resolution:* the current view, 720p to 4K, square or portrait. Dashed
+    rectangles on the view show what the video will contain (one per atom
+    when comparing).
+  - *Duration:* exactly one rotation (the video loops seamlessly; the atom
+    must be spinning) or a number of seconds.
+  - *FPS*, *grain* (default 2 px, which keeps each detection's colour intact
+    in compressed video and makes smaller files), *quality*.
+  - *Format:* those your browser can encode. MP4 · H.264 plays almost
+    everywhere; WebM offers VP9, AV1 and VP8.
+
+  *Record* renders every frame offline while the live view pauses (*Cancel*
+  stops it), then offers the file for download. The overlay is included if
+  it is shown. Per-pixel noise is hard to compress, so files are large (High
+  at 1080p60 is about 100 Mbit/s). Needs a browser with WebCodecs.
 - **Keys:** space pause · r reset view · s save PNG · c cut away ·
   n nearest colour · ←/→ element · Esc stop comparing.
 
@@ -84,6 +100,7 @@ for reproducible screenshots:
 | `density=0.5` | Exposure. |
 | `kmax=4`, `gamma=0.5` | Tone curve: counts for full brightness, and gamma. |
 | `res=full` | Noise resolution: `auto` (default), `full` or `half`. |
+| `record=1` | Open the video recording controls. |
 | `paused=1` | Start paused. |
 | `spin=0` | Start without the slow rotation. |
 | `debug=1` | Seed = frame number, so frames are reproducible. |

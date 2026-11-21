@@ -15,6 +15,7 @@
 //   ?res=full     noise canvas resolution: auto (default) | full | half
 //   ?kmax=4       counts for full brightness
 //   ?gamma=0.5    tone gamma
+//   ?record=1     open the video recording controls
 
 import { elementByZ, ELEMENTS, ORBITALS } from './elements.js';
 import { qAxisAngle, qMul, qNormalize } from './math.js';
@@ -25,6 +26,7 @@ import { attachControls } from './controls.js';
 import { buildUI, syncControls, updateElement, updateTable, updatePerf, drawOverlay } from './ui.js';
 import { atomsOf, valenceUnion, defaultExpandedShells } from './selection.js';
 import { createRadialPlot, radialMode } from './radial.js';
+import { createRecorderUI } from './recordui.js';
 
 const params = new URLSearchParams(location.search);
 
@@ -211,7 +213,7 @@ const app = {
     if (app.expanded.has(id)) app.expanded.delete(id); else app.expanded.add(id);
     updateElement(app);
   },
-  resetView() { state.orientation = defaultOrientation(); state.zoom = 1; state.spin = defaultSpin(); dirty = true; },
+  resetView() { state.orientation = defaultOrientation(); state.zoom = 1; state.spin = defaultSpin(); dirty = true; recorder.refresh(); },
   step() { advance(); dirty = true; },
   // Download what is on screen: the WebGL frame (kept by
   // preserveDrawingBuffer) plus the 2D overlay when it is shown.
@@ -237,10 +239,26 @@ attachControls(glCanvas, {
   setOrientation: q => { state.orientation = q; dirty = true; },
   getZoom: () => state.zoom,
   setZoom: z => { state.zoom = z; dirty = true; },
-  setSpin: s => { state.spin = s; },
+  setSpin: s => { state.spin = s; recorder?.refresh(); },
 });
 
 buildUI(app);
+app.tables = tables;
+// Video recording (red dot over the view). While it renders, the live view
+// is frozen (see frame()).
+const recorder = createRecorderUI({
+  app,
+  viewInfo: () => ({
+    width: glCanvas.width, height: glCanvas.height,
+    bohrPerPixel: lastViews?.[0]?.geo.bohrPerPixel ??
+      viewGeometry(state.element, glCanvas.width, glCanvas.height, state.zoom, state.fixedScale).bohrPerPixel,
+    dpr: glCanvas.width / view.clientWidth || 1,
+    panes: lastViews?.map(v => v.geo.rect) ?? [{ x: 0, y: 0, w: glCanvas.width, h: glCanvas.height }],
+  }),
+  views: () => (state.second ? [state.element, state.second] : [state.element])
+    .map((element, i) => ({ element, visible: i === 0 ? state.visible : undefined })),
+  changed: () => { dirty = true; },
+});
 const radial = createRadialPlot(
   document.getElementById('radial'),
   document.getElementById('radial-tip'),
@@ -249,6 +267,7 @@ let radialKey = '';
 syncControls(state);
 updateElement(app);
 if (params.get('z2')) app.toggleSecond(clampInt(params.get('z2'), 1, ELEMENTS.length, 0));
+if (params.get('record') === '1') recorder.open();
 
 function advance() {
   state.frame++;
@@ -262,6 +281,7 @@ function resize() {
   if (`${dw}x${dh}` !== lastDevice) {             // new size: Auto re-tries full resolution
     lastDevice = `${dw}x${dh}`;
     if (state.resMode === 'auto') { renderK = 1; slowSince = null; }
+    recorder.refresh();
   }
   if (overlay.width !== dw || overlay.height !== dh) { overlay.width = dw; overlay.height = dh; dirty = true; }
   // The canvas always matches device pixels exactly; render scale is
@@ -289,6 +309,11 @@ const scaleAnim = createScaleAnimator({ duration: prefersReducedMotion() ? 0 : 4
 let lastFrameT = null;
 
 function frame(t) {
+  if (recorder.phase() === 'rendering') {      // frozen while a video renders
+    lastFrameT = null;
+    requestAnimationFrame(frame);
+    return;
+  }
   resize();
   if (!state.paused) advance();
   // Keep spinning (paused stops it too; dt capped so a background tab
@@ -314,6 +339,7 @@ function frame(t) {
     const geos = renderer.renderViews(state, renderK, views);
     lastViews = views.map((v, i) => ({ element: v.element, geo: geos[i] }));
     drawOverlay(overlay, state, lastViews);
+    recorder.drawCrop(overlay);
     dirty = false;
     // Radial inset only changes with the element or the *target* view scale,
     // so it updates once per switch rather than every animation frame.

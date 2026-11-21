@@ -439,12 +439,15 @@ function haloText(ctx, text, x, y, halo, width) {
 // (bottom-left), from renderer.renderViews. Each pane gets its own atomic-radius
 // ring, element tile and scale bar; the axes marker (shared orientation) is
 // drawn once, and two panes are separated by a thin divider.
-export function drawOverlay(canvas, state, views) {
+// `scale`: device pixels per CSS pixel. Defaults to the canvas' on-screen
+// ratio; give it for canvases that are not in the page (video frames).
+export function drawOverlay(canvas, state, views, scale = null) {
   const ctx = canvas.getContext('2d');
   const w = canvas.width, hgt = canvas.height;
   ctx.clearRect(0, 0, w, hgt);
   if (!state.overlay) return;
-  const dpr = w / canvas.clientWidth || 1;
+  const dpr = scale ?? (w / canvas.clientWidth || 1);
+  const cssWidth = w / dpr;
   const fg = state.mode === 'white' ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.55)';
   const halo = state.mode === 'white' ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.9)';
   const hw = 4 * dpr;
@@ -481,7 +484,7 @@ export function drawOverlay(canvas, state, views) {
   }
 
   // Axes gizmo (atom frame axes projected to the screen), bottom-left.
-  const k = canvas.clientWidth < 520 ? 0.7 : 1;
+  const k = cssWidth < 520 ? 0.7 : 1;
   const m = qToMat3(state.orientation);   // atom -> view
   const gx = 50 * k * dpr, gy = hgt - 50 * k * dpr, gl = 34 * k * dpr;
   ctx.font = `${12 * dpr}px system-ui, sans-serif`;

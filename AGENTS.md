@@ -22,6 +22,7 @@ static-y noise. Two atoms can be shown side by side (A/B comparison).
   python3 -m http.server 8000
   # app:    http://localhost:8000/
   # tests:  http://localhost:8000/tests/test.html
+  # video:  http://localhost:8000/tests/video.html   (real time; see below)
   # bench:  http://localhost:8000/tests/bench.html?z=36,86   (also &colour=nearest, &cut=1)
   ```
 
@@ -44,10 +45,11 @@ static-y noise. Two atoms can be shown side by side (A/B comparison).
 | `js/elements.js` | Loads `data/elements.json`; occupancy (Hund fill), configurations, `MAX_Z`. |
 | `js/selection.js` | The selected atoms A (+ optional B) and everything derived from their union. |
 | `js/math.js` | CPU mirrors of the shader (column density, `pcg4d`, Poisson) used by tests, plus quaternions. |
+| `js/record.js`, `js/recordui.js`, `js/mux-mp4.js`, `js/mux-webm.js` | Video recording: frame plan, offscreen rendering at a fixed scale (centre crop of the view), WebCodecs encoding, codec levels; the red dot and recording controls; hand-written MP4 (H.264) and WebM (VP9/AV1/VP8) muxers. |
 | `js/ui.js`, `js/radial.js`, `js/tile.js`, `js/controls.js`, `js/view.js`, `js/tables.js` | Panel/overlay, radial-density chart, element tile, input, scale animation, table loader. |
 | `tools/gen_tables.py`, `tools/orbitals.py` | Generate the moment tables (`data/orbital_tables*`, incl. the odd cut-away moments). |
 | `tools/build_elements.py` | Builds `data/elements.json` from cached, cited sources in `data/sources/`. |
-| `tests/` | `test.html` + `tests.js` (browser, incl. GPU), `test_*.py` (stdlib unittest), `bench.*` (frame-time probe). |
+| `tests/` | `test.html` + `tests.js` (browser, incl. GPU), `video.html` + `video.js` (encoders, muxers, recording; real time), `test_*.py` (stdlib unittest), `bench.*` (frame-time probe). |
 
 ## Physics and math (don't break these)
 
@@ -120,14 +122,25 @@ google-chrome --headless=new --no-sandbox --use-angle=swiftshader \
   --enable-unsafe-swiftshader --user-data-dir="$(mktemp -d)" \
   --virtual-time-budget=200000 --dump-dom http://localhost:8000/tests/test.html \
   | grep -oE '<title>[^<]*|class="fail">[^<]*'      # expect: PASS n/n
+# Video tests play media, which needs real time: no --virtual-time-budget.
+# Chrome stays open, hence the timeout; the result is a console line.
+timeout 240 google-chrome --headless=new --no-sandbox --use-angle=swiftshader \
+  --enable-unsafe-swiftshader --user-data-dir="$(mktemp -d)" \
+  --enable-logging=stderr --v=0 http://localhost:8000/tests/video.html 2>&1 \
+  | grep -m1 -o 'TESTS.*'                          # expect: TESTS PASS n/n
 ```
+
+- **Recordings:** check real files with `ffprobe -count_frames` (codec, size,
+  frame count, duration) and `ffmpeg -v error -i FILE -f null -` (decodes
+  cleanly). Quality presets were calibrated by comparing source frames
+  (`record({ onFrame })`) with decoded ones; re-check by eye if they change.
 
 - **Screenshots** with `--screenshot` and `--window-size` (desktop 1400×1000,
   1366×768, phone `--window-size=390,844 --force-device-scale-factor=2`).
   Look at them; check overlaps, clipping and both themes.
 - **Reproducible frames:** URL options `?z=26&debug=1&paused=1&spin=0&res=full`
   (also `z2=` for a second atom, `mode=white`, `equalize=1`, `scale=fixed`, `cut=1`,
-  `colour=nearest`,
+  `colour=nearest`, `record=1`,
   `density=`). Use these for **pixel-identical before/after comparisons** when a
   change should not alter output (refactors, file moves).
 - For numeric/visual claims (noise quality, alignment, performance), measure:

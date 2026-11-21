@@ -851,3 +851,5 @@ for (const r of results) {
 const summary = `${pass === results.length ? 'PASS' : 'FAIL'} ${pass}/${results.length}`;
 document.getElementById('summary').textContent = summary;
 document.title = summary;
+// Also on the console (headless: --enable-logging=stderr).
+console.log(`TESTS ${summary}` + results.filter(r => !r.ok).map(r => ` | FAIL ${r.name}: ${r.msg}`).join(''));

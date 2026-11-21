@@ -109,11 +109,19 @@ export function baseHalf(element, fixedScale = false) {
 
 // View geometry (Bohr) for a canvas of the given pixel size. `baseOverride`
 // replaces baseHalf() (used to animate scale changes and to share one scale
-// between two panes); `radius` is always the element's own atomic radius.
-export function viewGeometry(element, width, height, zoom = 1, fixedScale = false, baseOverride = null) {
-  const half = (baseOverride ?? baseHalf(element, fixedScale)) / zoom;  // shorter half-dimension
-  const aspect = width / height;
-  const halfExtent = aspect >= 1 ? [half * aspect, half] : [half, half / aspect];
+// between two panes); `bohrPerPixel`, if given, fixes the scale outright
+// (video recording: the output frame is a centre crop of the view at a
+// different resolution). `radius` is always the element's own atomic radius.
+export function viewGeometry(element, width, height, zoom = 1, fixedScale = false, baseOverride = null,
+                             bohrPerPixel = null) {
+  let halfExtent;
+  if (bohrPerPixel) {
+    halfExtent = [(width / 2) * bohrPerPixel, (height / 2) * bohrPerPixel];
+  } else {
+    const half = (baseOverride ?? baseHalf(element, fixedScale)) / zoom;  // shorter half-dimension
+    const aspect = width / height;
+    halfExtent = aspect >= 1 ? [half * aspect, half] : [half, half / aspect];
+  }
   return { radius: viewRadius(element), halfExtent, bohrPerPixel: (2 * halfExtent[1]) / height };
 }
 
@@ -181,6 +189,7 @@ export function createRenderer(canvas, tables) {
    *   cut       - cut-away: only the half of the cloud behind the plane
    *               through the nucleus parallel to the screen (double gain),
    *   baseHalf  - optional animated base half-extent (see view.js),
+   *   bohrPerPixel - optional fixed scale (video recording; overrides the above),
    *   mode      - 'dark' | 'white',
    *   colour    - 'blend' (every orbital's detections mixed) | 'nearest'
    *               (only the orbital with the detection nearest the viewer),
@@ -252,7 +261,8 @@ export function createRenderer(canvas, tables) {
     const geos = views.map(({ element: el, visible = ALL_VISIBLE, rect }) => {
       const bw = Math.ceil(rect.w / k), bh = Math.ceil(rect.h / k);
       gl.viewport(rect.x / k, rect.y / k, bw, bh);
-      const geo = viewGeometry(el, rect.w, rect.h, state.zoom, state.fixedScale, state.baseHalf ?? null);
+      const geo = viewGeometry(el, rect.w, rect.h, state.zoom, state.fixedScale, state.baseHalf ?? null,
+        state.bohrPerPixel ?? null);
       const viewArea = 4 * geo.halfExtent[0] * geo.halfExtent[1];
       const gains = orbitalGains(tables, el, state.density, viewArea, state.equalize);
       const count = uploadOrbitals(el, visible, gains);

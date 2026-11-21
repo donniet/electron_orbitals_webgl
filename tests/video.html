@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>running…</title>
+  <style>
+    body { font: 14px system-ui, sans-serif; background: #111; color: #ddd; padding: 20px; }
+    li { margin: 2px 0; font-family: ui-monospace, monospace; }
+    .ok { color: #7c7; }
+    .fail { color: #f77; }
+    #summary { font-size: 20px; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h1>Electron orbitals – video tests</h1>
+  <div id="summary">running…</div>
+  <ul id="results"></ul>
+  <script type="module" src="video.js"></script>
+  <script>
+    window.addEventListener('error', e => {
+      document.getElementById('summary').textContent = 'ERROR ' + e.message;
+      document.title = 'ERROR ' + e.message;
+    });
+  </script>
+</body>
+</html>
