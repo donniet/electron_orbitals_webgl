@@ -110,12 +110,10 @@ footer a { color: var(--accent); }
    the recording controls are open and is hidden while a video renders. */
 .rec-dot {
   position: absolute; top: 34px; right: 12px; z-index: 1;
-  width: 18px; height: 18px; padding: 0;
-  border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.75);
+  width: 16px; height: 16px; padding: 0;
+  border: 0; border-radius: 50%;
   background: #e0302a; cursor: pointer;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
 }
-body.mode-white .rec-dot { border-color: rgba(0, 0, 0, 0.45); box-shadow: none; }
 .rec-dot:hover { transform: scale(1.15); }
 .rec-dot:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
 .rec-dot[hidden] { display: none; }
