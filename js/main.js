@@ -261,6 +261,23 @@ const recorder = createRecorderUI({
   changed: () => { dirty = true; },
   // Lay the strip out collapsed for a moment (no paint happens in between)
   // to measure it, whatever its current state.
+  // While a video renders, the view shows each finished frame, scaled to
+  // fit and letterboxed, on the overlay canvas (the live view is paused
+  // underneath; it is redrawn when rendering ends). Smoothing averages the
+  // noise when scaling down, which avoids moiré in this preview.
+  preview: frame => {
+    const g = overlay.getContext('2d');
+    const W = overlay.width, H = overlay.height;
+    const s = Math.min(W / frame.width, H / frame.height);
+    const w = Math.round(frame.width * s), h = Math.round(frame.height * s);
+    g.save();
+    g.fillStyle = '#000';
+    g.fillRect(0, 0, W, H);
+    g.imageSmoothingEnabled = true;
+    g.imageSmoothingQuality = 'high';
+    g.drawImage(frame, Math.round((W - w) / 2), Math.round((H - h) / 2), w, h);
+    g.restore();
+  },
   tableHeight: () => {
     const pt = document.getElementById('ptable');
     const hidden = pt.hidden, collapsed = app.tableCollapsed;

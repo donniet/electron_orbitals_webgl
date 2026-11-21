@@ -3,7 +3,8 @@
 // text says "Render" (every frame is rendered offline); the code says record.
 //
 // States: closed -> setup (dot blinks, outside the crop dimmed)
-//         -> rendering (dot hidden, live view frozen, progress bar)
+//         -> rendering (dot hidden, live view paused and covered by each
+//            rendered frame, letterboxed; progress bar)
 //         -> done (download link) or error; back to setup with "Render again".
 
 import {
@@ -41,6 +42,7 @@ const LARGE_BYTES = 1.5e9;
  *   views() -> [{ element, visible }]                    panes to record
  *   changed()                     redraw (crop preview, frozen view)
  *   tableHeight() -> px           height of the collapsed periodic-table strip
+ *   preview(canvas)               show a rendered video frame in the view
  * }
  * Returns { phase(), crop(), drawCrop(overlayCanvas), refresh(), open() }.
  */
@@ -110,6 +112,7 @@ export function createRecorderUI(ctx) {
         width: w, height: h, fps: settings.fps, duration: duration(), grain: settings.grain,
         formatId: settings.format, quality: settings.quality, signal: abort.signal,
         onProgress: (i, n) => { progress = [i, n]; updateProgress(); },
+        onFrame: canvas => ctx.preview(canvas),
       });
       url = URL.createObjectURL(result.blob);
       phase = 'done';

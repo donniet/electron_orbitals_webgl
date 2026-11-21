@@ -65,8 +65,9 @@ The server lets the browser cache files. If you edit the code, hard-reload
   - *Format:* those your browser can encode. MP4 · H.264 plays almost
     everywhere; WebM offers VP9, AV1 and VP8.
 
-  *Render* draws every frame offline while the live view pauses (*Cancel*
-  stops it), then offers the file for download. The overlay is included if
+  *Render* draws every frame offline; meanwhile the view shows each frame
+  as it is made, scaled to fit with black bars (*Cancel* stops it). Then
+  the file is offered for download. The overlay is included if
   it is shown. Per-pixel noise is hard to compress, so files are large (High
   at 1080p60 is about 100 Mbit/s). Needs a browser with WebCodecs.
 - **Keys:** space pause · r reset view · s save PNG · c cut away ·
