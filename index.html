@@ -91,6 +91,13 @@
         <label><input type="radio" name="colormode" value="nearest"> Nearest</label>
         <label><input type="radio" name="colormode" value="blend"> Blend</label>
       </div>
+      <div class="row" id="streak-row" title="Nearest color only. Draws each detection as a short line along the electron's momentum at that point: its local momentum spread, from the Wigner function (T = −½ ∇∇ ln|ψ|). Local: a random momentum with that spread. Axis: the spread's main axis. Lines have no arrow (+p and −p are equally likely); lengths are relative to each orbital's typical momentum. (m)">
+        <span>Momentum</span>
+        <label><input type="radio" name="streakmode" value="off"> Off</label>
+        <label><input type="radio" name="streakmode" value="local"> Local</label>
+        <label><input type="radio" name="streakmode" value="axis"> Axis</label>
+      </div>
+      <p id="streak-note" class="note" hidden>Momentum lines: the spread of momentum at each detection (Wigner function), relative to each orbital's typical momentum — what a momentum measurement there would tend to find, not a path. Where that spread is partly negative (near some nodes), only its positive part is drawn.</p>
       <label class="slider">
         <span>Counts for full brightness <output id="kmax-val"></output></span>
         <input id="kmax" type="range" min="1" max="20" step="0.5">
@@ -119,7 +126,7 @@
     </section>
 
     <footer>
-      <p>Drag to rotate · scroll to zoom · ←/→ change element · space pause · r reset · s save PNG · c cut away · n nearest / blend color.
+      <p>Drag to rotate · scroll to zoom · ←/→ change element · space pause · r reset · s save PNG · c cut away · n nearest / blend color · m momentum lines.
       Shift-click (or long-press) an element to compare it side by side.</p>
       <p>Hydrogen-like orbitals with Clementi–Raimondi Z<sub>eff</sub>; fixed orientation.</p>
       <p class="links">

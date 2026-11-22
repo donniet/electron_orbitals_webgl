@@ -8,6 +8,7 @@
 //   z, z2               atom A and optional atom B (side by side)
 //   q=w,x,y,z | zoom    orientation quaternion and zoom (default: the app's)
 //   density, kmax, gamma, equalize=1, scale=fixed, cut=1, color=blend,
+//   streaks=local|axis|global,
 //   overlay=0, radial=shell|subshell|compare   as in the app
 //   hide=i,j,...        orbital indices hidden (in both panes, like the app)
 // Print-page options (also in its toolbar):
@@ -17,7 +18,7 @@
 import { elementByZ, ELEMENTS, ORBITALS } from './elements.js';
 import { SUBSHELLS, orbitalsOf } from './orbitals.js';
 import { loadTables } from './tables.js';
-import { createRenderer, baseHalf, viewGeometry, splitViews } from './renderer.js';
+import { createRenderer, baseHalf, viewGeometry, splitViews, streakParam } from './renderer.js';
 import { defaultOrientation } from './view.js';
 import { qNormalize } from './math.js';
 import { drawOverlay, orbitalCss, periodGroup, en, rmsPm, modelNotes, CAPACITY, SHELL_LETTER } from './ui.js';
@@ -77,6 +78,7 @@ const state = {
   fixedScale: params.get('scale') === 'fixed',
   cut: params.get('cut') === '1',
   color: params.get('color') === 'blend' ? 'blend' : 'nearest',
+  streaks: streakParam(params.get('streaks')),
   overlay: params.get('overlay') !== '0',
   radialMode: ['shell', 'subshell', 'compare'].includes(params.get('radial')) ? params.get('radial') : 'auto',
   mode: 'white',
@@ -158,6 +160,10 @@ function caption(W, H) {
     state.color === 'nearest' ? 'nearest color' : 'blended color',
   ];
   if (state.cut) parts.push('cut away: half behind the nucleus');
+  if (state.streaks && state.color === 'nearest') {
+    parts.push({ local: 'momentum lines: local spread', axis: 'momentum lines: local main axis',
+      global: 'momentum lines: whole-orbital sample' }[state.streaks]);
+  }
   if (state.fixedScale) parts.push('fixed scale');
   if (state.zoom !== 1) parts.push(`zoom ${+state.zoom.toFixed(2)}×`);
   parts.push(`${IMAGE_DPI / k} samples/in (${W / k} × ${H / k})`, `seed ${state.seed}`);

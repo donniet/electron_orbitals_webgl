@@ -1,6 +1,6 @@
 // Frame-time probe: ms per frame for selected elements at a given size.
 import { ELEMENTS, ORBITALS } from '../js/elements.js';
-import { createRenderer } from '../js/renderer.js';
+import { createRenderer, streakParam } from '../js/renderer.js';
 import { loadTables } from '../js/tables.js';
 
 const params = new URLSearchParams(location.search);
@@ -10,7 +10,7 @@ const size = +params.get('size') || 800;
 const frames = +params.get('frames') || 20;
 const color = params.get('color') === 'blend' ? 'blend' : 'nearest';   // app default: nearest
 const cut = params.get('cut') === '1';
-const streaks = { 1: 'global', global: 'global', local: 'local', axis: 'axis' }[params.get('streaks')] || false;
+const streaks = streakParam(params.get('streaks'));
 
 const tables = await loadTables();
 const canvas = document.createElement('canvas');

@@ -359,6 +359,7 @@ footer a { color: var(--accent); }
 .row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; font-size: 13px; }
 .row > span { color: var(--muted); font-size: 12px; }
 .row .hint { color: var(--muted); font-size: 11px; margin-left: -8px; }
+.row.disabled label { opacity: 0.45; }
 .buttons button {
   flex: 1;
   background: var(--panel-2);
@@ -418,3 +419,4 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
   .ptable { grid-template-columns: repeat(18, minmax(0, 22px)); padding: 4px 36px 4px 6px; }
   .pt-sym { font-size: 10px; }
 }
+#streak-note { margin: -2px 0 10px; }

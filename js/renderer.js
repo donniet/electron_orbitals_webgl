@@ -16,6 +16,12 @@ export const STREAK_LEN = 2;
 // the local principal axis.
 export const STREAK_MODES = { global: 0, local: 1, axis: 2 };
 
+// URL value -> state.streaks: local | axis | global (also 1) | anything else off.
+export function streakParam(v) {
+  if (v === '1' || v === 'global') return 'global';
+  return v === 'local' || v === 'axis' ? v : false;
+}
+
 // ------------------------------------------------------------ peaks
 // Peak column density per electron of each orbital *shape* in reference
 // units (Z0 = n), maximised over all rays. Cached per tables object.

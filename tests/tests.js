@@ -1147,6 +1147,39 @@ test('GPU streaks: the streak pass is the nearest covering segment (CPU gather),
   }
 });
 
+await testAsync('app: Momentum row follows the URL, needs nearest color, m cycles off/local/axis', async () => {
+  const f = document.createElement('iframe');
+  f.style.cssText = 'position:absolute;left:-10000px;width:1400px;height:1000px';
+  f.src = '../index.html?z=5&paused=1&spin=0&streaks=local';
+  document.body.append(f);
+  const q = sel => f.contentDocument?.querySelector(sel);
+  const t0 = performance.now();
+  while (!q('input[name=streakmode][value=local]')?.checked) {
+    if (performance.now() - t0 > 60000) throw new Error('app did not load');
+    await new Promise(r => setTimeout(r, 50));
+  }
+  assert(!q('#streak-note').hidden, 'note shown');
+  const key = k => f.contentWindow.dispatchEvent(new f.contentWindow.KeyboardEvent('keydown', { key: k }));
+  key('m');
+  assert(q('input[name=streakmode][value=axis]').checked, 'm: local -> axis');
+  q('input[name=colormode][value=blend]').click();
+  assert(q('input[name=streakmode][value=axis]').disabled && q('#streak-note').hidden, 'blend disables');
+  key('m');
+  assert(q('input[name=streakmode][value=off]').checked && q('#streak-note').hidden, 'm: axis -> off');
+  key('m');
+  assert(q('input[name=streakmode][value=local]').checked, 'm: off -> local');
+  assert(q('input[name=colormode][value=nearest]').checked && !q('input[name=streakmode][value=local]').disabled,
+    'm switches back to nearest color');
+  f.remove();
+});
+
+await testAsync('print page: momentum lines carried in the URL and named in the caption', async () => {
+  const f = await loadFrame('../print.html?z=5&seed=7&paper=letter&grain=4&streaks=axis');
+  const cap = f.contentDocument.getElementById('caption').textContent;
+  assert(cap.includes('momentum lines: local main axis'), `caption: ${cap}`);
+  f.remove();
+});
+
 // ------------------------------------------------------------ report
 const pass = results.filter(r => r.ok).length;
 const out = document.getElementById('results');

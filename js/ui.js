@@ -90,6 +90,9 @@ export function buildUI(app) {
   for (const r of document.querySelectorAll('input[name=colormode]')) {
     r.addEventListener('change', e => { if (e.target.checked) app.setColor(e.target.value); });
   }
+  for (const r of document.querySelectorAll('input[name=streakmode]')) {
+    r.addEventListener('change', () => r.checked && app.setStreaks(r.value === 'off' ? false : r.value));
+  }
   for (const r of document.querySelectorAll('input[name=bgmode]')) {
     r.addEventListener('change', () => r.checked && app.setMode(r.value));
   }
@@ -119,6 +122,12 @@ export function buildUI(app) {
     else if (e.key === 'p') app.openPrintPage();
     else if (e.key === 'c') app.setCut(!app.state.cut);
     else if (e.key === 'n') app.setColor(app.state.color === 'nearest' ? 'blend' : 'nearest');
+    else if (e.key === 'm') {
+      // off -> local -> axis -> off (momentum lines need nearest color)
+      const next = { local: 'axis', axis: false }[app.state.streaks] ?? 'local';
+      if (next && app.state.color !== 'nearest') app.setColor('nearest');
+      app.setStreaks(next);
+    }
     else if (e.key === 'Escape') { if (app.pickingSecond) app.togglePicking(); else app.clearSecond(); }
   });
 }
@@ -159,6 +168,14 @@ export function syncControls(state) {
     ? 'Peak expected detections per pixel = exposure x 20'
     : 'Mean detections per pixel per frame (if the whole atom were in view)';
   for (const r of document.querySelectorAll('input[name=colormode]')) r.checked = r.value === state.color;
+  // Momentum lines exist only in nearest color.
+  const nearest = state.color === 'nearest';
+  for (const r of document.querySelectorAll('input[name=streakmode]')) {
+    r.checked = r.value === (state.streaks || 'off');
+    r.disabled = !nearest;
+  }
+  $('#streak-row').classList.toggle('disabled', !nearest);
+  $('#streak-note').hidden = !(nearest && state.streaks);
   for (const r of document.querySelectorAll('input[name=bgmode]')) r.checked = r.value === state.mode;
   for (const r of document.querySelectorAll('input[name=resmode]')) r.checked = r.value === state.resMode;
   $('#pause').textContent = state.paused ? 'Play' : 'Pause';

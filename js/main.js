@@ -20,7 +20,7 @@
 
 import { elementByZ, ELEMENTS, ORBITALS } from './elements.js';
 import { qAxisAngle, qMul, qNormalize } from './math.js';
-import { createRenderer, baseHalf, viewGeometry, splitViews } from './renderer.js';
+import { createRenderer, baseHalf, viewGeometry, splitViews, streakParam } from './renderer.js';
 import { createScaleAnimator, prefersReducedMotion, defaultOrientation } from './view.js';
 import { loadTables } from './tables.js';
 import { attachControls } from './controls.js';
@@ -39,12 +39,6 @@ function defaultSpin() {
   return { axis: [0, 1, 0], rate: 0.0025 };            // rad/ms (~14 deg/s)
 }
 
-// ?streaks=1 (or global) | local | axis: see renderer.js STREAK_MODES.
-function streakParam(v) {
-  if (v === '1' || v === 'global') return 'global';
-  return v === 'local' || v === 'axis' ? v : false;
-}
-
 const state = {
   element: elementByZ(clampInt(params.get('z'), 1, ELEMENTS.length, 6)),
   second: null,                  // optional second atom, shown side by side (shift-click)
@@ -55,7 +49,8 @@ const state = {
   fixedScale: params.get('scale') === 'fixed',
   cut: params.get('cut') === '1',  // cut-away: only the cloud behind the nucleus
   color: params.get('color') === 'blend' ? 'blend' : 'nearest',
-  streaks: streakParam(params.get('streaks')),  // prototype: momentum streaks (nearest color only)
+  // momentum streaks (nearest color only): false | 'local' | 'axis' | 'global' (URL only)
+  streaks: streakParam(params.get('streaks')),
   radialMode: 'auto',            // 'auto' | 'shell' | 'subshell'
   spin: defaultSpin(),           // { axis, rate } in view space, or null
   kMax: +params.get('kmax') || 4,
@@ -185,6 +180,7 @@ const app = {
   setFixedScale(b) { state.fixedScale = b; syncControls(state); dirty = true; },
   setCut(b) { state.cut = b; syncControls(state); dirty = true; },
   setColor(m) { state.color = m; syncControls(state); dirty = true; },
+  setStreaks(m) { state.streaks = m; syncControls(state); dirty = true; },
   setRadialMode(m) { state.radialMode = m; radialKey = ''; syncRadialButtons(); dirty = true; },
   setMode(m) { state.mode = m; syncControls(state); dirty = true; },
   setPaused(p) { state.paused = p; syncControls(state); },
@@ -260,6 +256,7 @@ function printParams(s) {
   if (s.fixedScale) p.set('scale', 'fixed');
   if (s.cut) p.set('cut', '1');
   if (s.color !== 'nearest') p.set('color', s.color);
+  if (s.streaks) p.set('streaks', s.streaks);
   if (!s.overlay) p.set('overlay', '0');
   if (s.radialMode !== 'auto') p.set('radial', s.radialMode);
   const hidden = s.visible.flatMap((v, i) => (v ? [] : [i]));
