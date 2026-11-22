@@ -14,6 +14,7 @@
 //                 momentum streak: instead of a color this pass writes a
 //                 packed texel (color, streak half-vector, depth) that
 //                 shaders/streak.glsl draws as short lines.
+//   NUM_ROWS      (with STREAKS) number of radial table rows
 #ifndef NUM_ORBITALS
 #error NUM_ORBITALS must be defined by the host (createProgram defines)
 #endif
@@ -37,6 +38,7 @@
 // < 2^20 and the nearest-depth streams 2^20 + slot).
 #define STREAM_MOMENTUM_DIR (2u << 20)
 #define STREAM_MOMENTUM_Q   (3u << 20)
+#define STREAM_MOMENTUM_LOCAL (4u << 20)
 #endif
 
 precision highp float;
@@ -79,6 +81,13 @@ uniform int   uColorMode;   // 0 = blend every orbital's detections;
 uniform sampler2D uMomentumTables;
 uniform mat3  uRot;
 uniform float uStreakLen;
+// 0: global -- a sample of the orbital's whole momentum distribution;
+// 1: local  -- a sample of the local momentum spread at the detection;
+// 2: axis   -- the principal axis of that local spread.
+uniform int   uStreakMode;
+// Radial polynomial P of each row, R_ref = norm exp(-u) P(u) u^l: ascending
+// coefficients c0..c7 in two vec4 per row (local modes).
+uniform vec4  uRadialPoly[2 * NUM_ROWS];
 #endif
 
 // Occupied, visible orbitals, packed into the first uCount slots of a
@@ -123,7 +132,9 @@ float nearestDepthRef(Orbital o, vec3 P, vec3 d, int k, float massRef, float v, 
 #ifdef STREAKS
 vec3  momentumDirection(Orbital o, uvec3 key);
 float momentumQ(int row, float F);
-vec2  streakHalf(Orbital o, uvec3 key);
+vec2  streakHalf(Orbital o, uvec3 key, vec3 X);
+mat3  hessLogPsi(Orbital o, vec3 X);
+vec3  jacobiEigen(mat3 A, out mat3 V);
 #endif
 // 2. Rendering helpers
 vec3  hsv2rgb(vec3 c);
@@ -152,6 +163,9 @@ void main() {
   float nearSat = 0.0;
   vec2 nearChroma = vec2(0.0);
   int nearSlot = -1;
+#ifdef STREAKS
+  vec3 nearX = vec3(0.0);     // the nearest detection, scaled by its orbital's kappa
+#endif
 
   for (int i = 0; i < NUM_ORBITALS; i++) {
     if (i >= uCount) break;
@@ -182,6 +196,9 @@ void main() {
         nearSat = sat;
         nearChroma = c;
         nearSlot = i;
+#ifdef STREAKS
+        nearX = P + tRef * d;
+#endif
       }
     }
   }
@@ -215,7 +232,7 @@ void main() {
   vec2 h = vec2(0.0);
   uint has = 0u;
   if (uColorMode == 1 && nearSlot >= 0) {
-    h = streakHalf(uOrbitals[nearSlot], key);
+    h = streakHalf(uOrbitals[nearSlot], key, nearX);
     has = 1u;
   }
   uvec3 c8 = uvec3(round(clamp(rgb, 0.0, 1.0) * 255.0));
@@ -408,15 +425,122 @@ float momentumQ(int row, float F) {
              texelFetch(uMomentumTables, ivec2(i + 1, row), 0).r, f);
 }
 
-// Streak half-vector on screen (render-buffer pixels): the momentum sample
-// q * direction (relative units: q = p / kappa, so every shell shows its own
+// Local momentum spread at the detection (modes 1, 2). With x and p not
+// commuting there is no joint distribution, but the Wigner function gives
+// the second moment of momentum at a point x. For real psi it is
+//     T(x) = <p p^T>_x = -(hbar^2 / 2) Hess ln|psi(x)|,
+// and integrated over |psi|^2 it gives exactly the second moments of
+// |phi(p)|^2. In the scaled frame of the orbital (X = kappa x) and in units
+// of kappa (as q): T = -Hess_X ln|psi_ref(X)| / 2. It can be indefinite (the
+// Wigner function is not a probability); negative eigenvalues are dropped.
+// Mirrored in js/math.js.
+//
+// Hessian of ln|psi_ref| at scaled point X: psi_ref ~ exp(-u) P(u) A(X), so
+// ln|psi| = -u + ln|P(u)| + ln|A(X)|, A homogeneous of degree l.
+mat3 hessLogPsi(Orbital o, vec3 X) {
+  int l = int(o.kind.x + 0.5);
+  int row = int(o.kind.y + 0.5);
+  float u = max(length(X), 1e-4);
+  vec3 r = X / u;
+  // P, P', P'' by Horner (unrolled: constant indices only)
+  vec4 c0 = uRadialPoly[2 * row], c1 = uRadialPoly[2 * row + 1];
+  float p0 = 0.0, p1 = 0.0, p2 = 0.0;
+#define HORNER(c) p2 = p2 * u + 2.0 * p1; p1 = p1 * u + p0; p0 = p0 * u + (c);
+  HORNER(c1.w) HORNER(c1.z) HORNER(c1.y) HORNER(c1.x)
+  HORNER(c0.w) HORNER(c0.z) HORNER(c0.y) HORNER(c0.x)
+#undef HORNER
+  p0 = p0 < 0.0 ? min(p0, -1e-6) : max(p0, 1e-6);       // away from radial nodes
+  float lp = p1 / p0;
+  float g1 = -1.0 + lp;                // d/du ln|q|
+  float g2 = p2 / p0 - lp * lp;        // d2/du2 ln|q|
+  mat3 rr = outerProduct(r, r);
+  mat3 H = g2 * rr + (g1 / u) * (mat3(1.0) - rr);
+  if (l == 0) return H;
+  // ln|A|: Hess = Hess A / A - grad A grad A^T / A^2
+  float A;
+  vec3 g;
+  mat3 HA;
+  if (l == 1) {
+    A = dot(o.c0.xyz, X); g = o.c0.xyz; HA = mat3(0.0);
+  } else if (l == 2) {
+    mat3 Q = mat3(o.c0.x, o.c0.y, o.c0.z,  o.c0.y, o.c0.w, o.c1.x,  o.c0.z, o.c1.x, o.c1.y);
+    A = dot(X, Q * X); g = 2.0 * (Q * X); HA = 2.0 * Q;
+  } else {
+    mat3 Cx = mat3(o.c0.x, o.c0.y, o.c0.z,  o.c0.y, o.c0.w, o.c1.x,  o.c0.z, o.c1.x, o.c1.y);
+    mat3 Cy = mat3(o.c0.y, o.c0.w, o.c1.x,  o.c0.w, o.c1.z, o.c1.w,  o.c1.x, o.c1.w, o.c2.x);
+    mat3 Cz = mat3(o.c0.z, o.c1.x, o.c1.y,  o.c1.x, o.c1.w, o.c2.x,  o.c1.y, o.c2.x, o.c2.y);
+    mat3 M = X.x * Cx + X.y * Cy + X.z * Cz;
+    A = dot(X, M * X); g = 3.0 * (M * X); HA = 6.0 * M;
+  }
+  float eps = 1e-6 * pow(u, float(l));                   // away from angular nodes
+  A = A < 0.0 ? min(A, -eps) : max(A, eps);
+  return H + HA / A - outerProduct(g, g) / (A * A);
+}
+
+// Eigen-decomposition of symmetric A by cyclic Jacobi rotations: returns
+// the eigenvalues, V the eigenvectors (columns). Mirrored in js/math.js.
+// One rotation zeroing A[p][q] (constant p < q; J[col][row]).
+#define JACOBI_ROT(p, q) { \
+    float apq = A[q][p]; \
+    if (abs(apq) > 1e-12 * (abs(A[p][p]) + abs(A[q][q]))) { \
+      float theta = (A[q][q] - A[p][p]) / (2.0 * apq); \
+      float t = (theta >= 0.0 ? 1.0 : -1.0) / (abs(theta) + sqrt(theta * theta + 1.0)); \
+      float c = inversesqrt(t * t + 1.0), s = t * c; \
+      mat3 J = mat3(1.0); \
+      J[p][p] = c; J[q][q] = c; J[q][p] = s; J[p][q] = -s; \
+      A = transpose(J) * A * J; \
+      V = V * J; \
+    } }
+vec3 jacobiEigen(mat3 A, out mat3 V) {
+  V = mat3(1.0);
+  for (int sweep = 0; sweep < 6; sweep++) {
+    JACOBI_ROT(0, 1) JACOBI_ROT(0, 2) JACOBI_ROT(1, 2)
+  }
+  return vec3(A[0][0], A[1][1], A[2][2]);
+}
+#undef JACOBI_ROT
+
+// Streak half-vector on screen (render-buffer pixels) for the detection at
+// scaled point X: a momentum in units of kappa (so every shell shows its own
 // pattern), rotated to view space, projected onto the screen, scaled by
 // uStreakLen and clamped to STREAK_R.
-vec2 streakHalf(Orbital o, uvec3 key) {
-  vec3 dir = momentumDirection(o, key);
-  float q = momentumQ(int(o.kind.y + 0.5), u01(pcg4d(uvec4(key, STREAM_MOMENTUM_Q)).x));
-  vec2 h = uStreakLen * q * (transpose(uRot) * dir).xy;   // atom -> view
+//  global: q * direction from the whole momentum distribution;
+//  local:  a Gaussian sample with covariance T (negative part dropped);
+//  axis:   sqrt(largest eigenvalue of T) along its eigenvector (random
+//          within the eigenspace where the largest eigenvalues coincide).
+vec2 streakHalf(Orbital o, uvec3 key, vec3 X) {
+  vec3 p;
+  if (uStreakMode == 0) {
+    vec3 dir = momentumDirection(o, key);
+    p = momentumQ(int(o.kind.y + 0.5), u01(pcg4d(uvec4(key, STREAM_MOMENTUM_Q)).x)) * dir;
+  } else {
+    mat3 V;
+    vec3 lam = max(jacobiEigen(-0.5 * hessLogPsi(o, X), V), 0.0);
+    vec4 r = vec4(pcg4d(uvec4(key, STREAM_MOMENTUM_LOCAL)) >> 8u) * (1.0 / 16777216.0);
+    vec2 m = sqrt(-2.0 * log(1.0 - r.xz));                 // Box-Muller, 1 - u in (0, 1]
+    vec3 z = vec3(m.x * cos(TWO_PI * r.y), m.x * sin(TWO_PI * r.y), m.y * cos(TWO_PI * r.w));
+    vec3 zV = transpose(V) * z;                            // z in the eigenbasis
+    if (uStreakMode == 2) {
+      // Principal axis, length sqrt(largest eigenvalue). Where the largest
+      // eigenvalues coincide (the tangential plane of s) no axis is singled
+      // out: the direction is random in that eigenspace, from the spectral
+      // weight (lam / max)^8 applied to z -- a function of T alone.
+      float lmax = max(lam.x, max(lam.y, lam.z));
+      vec3 w = lam / max(lmax, 1e-30);
+      w *= w; w *= w; w *= w;
+      vec3 a = V * (w * zV);
+      float al = length(a);
+      p = al > 0.0 ? sqrt(lmax) * a / al : vec3(0.0);
+    } else {
+      // symmetric square root V sqrt(L) V^T: unique even where eigenvalues
+      // coincide, so the sample does not depend on the eigenbasis Jacobi
+      // happens to pick
+      p = V * (sqrt(lam) * zV);
+    }
+  }
+  vec2 h = uStreakLen * (transpose(uRot) * p).xy;         // atom -> view
   float len = length(h);
+  if (!(len < 1e30)) return vec2(0.0);                    // non-finite at a node
   return len > float(STREAK_R) ? h * (float(STREAK_R) / len) : h;
 }
 #endif

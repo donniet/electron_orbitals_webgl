@@ -3,13 +3,18 @@
 import { createContext, createProgram, createTableTexture, createEmptyVAO, createUintTarget,
   resizeUintTarget } from './gl.js';
 import { VERT, FRAG, STREAK_FRAG, SHADER_DEFINES, STREAK_DEFINES, STREAK_R } from './shaders.js';
-import { ORBITALS, NUM_ORBITALS, angularCoefs, orbitalChroma } from './orbitals.js';
+import { ORBITALS, NUM_ORBITALS, angularCoefs, orbitalChroma, radialPolyRef } from './orbitals.js';
 import { ELEMENTS } from './elements.js';
 import { viewToAtom, mat3ToGL, momentLookup, columnRef, angularMax2 } from './math.js';
 
 // Momentum streaks (prototype): streak half-length per unit of projected
 // scaled momentum q = p / kappa (render-buffer pixels); <q^2> = 1.
 export const STREAK_LEN = 2;
+
+// state.streaks -> uStreakMode (see fragment.glsl): a sample of the whole
+// momentum distribution, a sample of the local spread at the detection, or
+// the local principal axis.
+export const STREAK_MODES = { global: 0, local: 1, axis: 2 };
 
 // ------------------------------------------------------------ peaks
 // Peak column density per electron of each orbital *shape* in reference
@@ -151,7 +156,7 @@ export function createRenderer(canvas, tables) {
   // The physics pass: `main` writes colors; `det` (streaks, compiled with
   // STREAKS) writes packed detections that the `streak` pass draws as lines.
   const main = createProgram(gl, VERT, FRAG, { defines: SHADER_DEFINES });
-  const det = createProgram(gl, VERT, FRAG, { defines: STREAK_DEFINES });
+  const det = createProgram(gl, VERT, FRAG, { defines: { ...STREAK_DEFINES, NUM_ROWS: tables.rows.length } });
   const streak = createProgram(gl, VERT, STREAK_FRAG, { defines: { STREAK_R } });
   const tex = createTableTexture(gl, tables.data, tables.N, tables.rows.length);
   const oddTex = createTableTexture(gl, tables.odd, tables.N, tables.rows.length);
@@ -181,6 +186,11 @@ export function createRenderer(canvas, tables) {
     gl.uniform1f(u.uTableUMax, tables.uMax);
     gl.uniformBlockBinding(prog, gl.getUniformBlockIndex(prog, 'Orbitals'), 0);
   }
+  // Radial polynomials of every table row for the local streak modes.
+  gl.useProgram(det.prog);
+  const polys = new Float32Array(8 * tables.rows.length);
+  tables.rows.forEach((r, i) => polys.set(radialPolyRef(r.n, r.l).poly, 8 * i));
+  gl.uniform4fv(det.uniforms.uRadialPoly, polys);
   gl.useProgram(streak.prog);
   gl.uniform1i(streak.uniforms.uDetections, 4);
   const ubo = gl.createBuffer();
@@ -214,7 +224,10 @@ export function createRenderer(canvas, tables) {
    *               (only the orbital with the detection nearest the viewer),
    *   visible   - boolean per orbital,
    *   streaks   - (prototype) in 'nearest' color, draw each detection as a
-   *               short line along a momentum sampled from its orbital
+   *               short line along a momentum: false | 'global' (a sample of
+   *               its orbital's momentum distribution) | 'local' (a sample of
+   *               the local spread at the detection) | 'axis' (the local
+   *               principal axis); true means 'global' 
    * }
    */
   // Low-resolution target for render scale k > 1. The result is copied to
@@ -283,6 +296,7 @@ export function createRenderer(canvas, tables) {
       gl.activeTexture(gl.TEXTURE0);
       gl.bindFramebuffer(gl.FRAMEBUFFER, detTarget.fbo);
       gl.uniform1f(u.uStreakLen, STREAK_LEN);
+      gl.uniform1i(u.uStreakMode, STREAK_MODES[state.streaks === true ? 'global' : state.streaks]);
     } else {
       gl.bindFramebuffer(gl.FRAMEBUFFER, colorTarget);
     }

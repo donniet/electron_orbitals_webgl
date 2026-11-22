@@ -39,6 +39,12 @@ function defaultSpin() {
   return { axis: [0, 1, 0], rate: 0.0025 };            // rad/ms (~14 deg/s)
 }
 
+// ?streaks=1 (or global) | local | axis: see renderer.js STREAK_MODES.
+function streakParam(v) {
+  if (v === '1' || v === 'global') return 'global';
+  return v === 'local' || v === 'axis' ? v : false;
+}
+
 const state = {
   element: elementByZ(clampInt(params.get('z'), 1, ELEMENTS.length, 6)),
   second: null,                  // optional second atom, shown side by side (shift-click)
@@ -49,7 +55,7 @@ const state = {
   fixedScale: params.get('scale') === 'fixed',
   cut: params.get('cut') === '1',  // cut-away: only the cloud behind the nucleus
   color: params.get('color') === 'blend' ? 'blend' : 'nearest',
-  streaks: params.get('streaks') === '1',  // prototype: momentum streaks (nearest color only)
+  streaks: streakParam(params.get('streaks')),  // prototype: momentum streaks (nearest color only)
   radialMode: 'auto',            // 'auto' | 'shell' | 'subshell'
   spin: defaultSpin(),           // { axis, rate } in view space, or null
   kMax: +params.get('kmax') || 4,

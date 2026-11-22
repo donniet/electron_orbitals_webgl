@@ -1,5 +1,7 @@
 // Math helpers + CPU reference implementations that mirror the shader.
 
+import { radialPolyRef } from './orbitals.js';
+
 // ------------------------------------------------------------ quaternions
 // q = [x, y, z, w]; represents the atom's orientation in view space:
 // v_view = rotate(q, v_atom).
@@ -254,16 +256,107 @@ export function momentumQ(tables, row, F) {
   return momentum[row * N + i] * (1 - f) + momentum[row * N + i + 1] * f;
 }
 
-// Streak half-vector (render-buffer pixels) for pixel key [x, y, seed]:
-// q dir rotated by atomToView (row-major, = transpose of the shader's uRot),
-// projected on the screen, times len, clamped to rMax. Mirrors streakHalf().
-export function streakHalf(tables, orbital, key, atomToView, len, rMax) {
-  const dir = momentumDirection(orbital, key);
-  const q = momentumQ(tables, orbital.row,
-    u01(pcg4d(key[0] >>> 0, key[1] >>> 0, key[2] >>> 0, STREAM_MOMENTUM_Q >>> 0)[0]));
-  const v = mat3MulVec(atomToView, dir);
-  let h = [len * q * v[0], len * q * v[1]];
+export const STREAM_MOMENTUM_LOCAL = 4 << 20;
+
+// Hessian (row-major 3x3) of ln|psi_ref| at scaled point X; see
+// hessLogPsi() in the shader, which this mirrors. psi_ref ~ exp(-u) P(u) A(X).
+export function hessLogPsi(orbital, X) {
+  const u = Math.max(Math.hypot(X[0], X[1], X[2]), 1e-4);
+  const r = X.map(c => c / u);
+  const cs = radialPolyRef(orbital.n, orbital.l).poly;
+  let p0 = 0, p1 = 0, p2 = 0;
+  for (let k = cs.length - 1; k >= 0; k--) {
+    p2 = p2 * u + 2 * p1;
+    p1 = p1 * u + p0;
+    p0 = p0 * u + cs[k];
+  }
+  p0 = p0 < 0 ? Math.min(p0, -1e-6) : Math.max(p0, 1e-6);
+  const lp = p1 / p0, g1 = -1 + lp, g2 = p2 / p0 - lp * lp;
+  const H = [0, 1, 2].map(i => [0, 1, 2].map(j =>
+    g2 * r[i] * r[j] + (g1 / u) * ((i === j ? 1 : 0) - r[i] * r[j])));
+  if (orbital.l === 0) return H;
+  let A, g, HA;
+  if (orbital.l === 1) {
+    A = dot3(orbital.e, X); g = orbital.e; HA = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  } else if (orbital.l === 2) {
+    const QX = mulQ(orbital.Q, X);
+    A = dot3(X, QX); g = QX.map(c => 2 * c); HA = orbital.Q.map(row => row.map(c => 2 * c));
+  } else {
+    const C = orbital.C;
+    const M = [0, 1, 2].map(i => [0, 1, 2].map(j => C[0][i][j] * X[0] + C[1][i][j] * X[1] + C[2][i][j] * X[2]));
+    const MX = mulQ(M, X);
+    A = dot3(X, MX); g = MX.map(c => 3 * c); HA = M.map(row => row.map(c => 6 * c));
+  }
+  const eps = 1e-6 * u ** orbital.l;
+  A = A < 0 ? Math.min(A, -eps) : Math.max(A, eps);
+  return H.map((row, i) => row.map((h, j) => h + HA[i][j] / A - g[i] * g[j] / (A * A)));
+}
+
+// Local momentum second moment T = -Hess ln|psi| / 2 (units of kappa^2).
+export function localMomentumTensor(orbital, X) {
+  return hessLogPsi(orbital, X).map(row => row.map(c => -0.5 * c));
+}
+
+// Cyclic Jacobi eigen-decomposition of symmetric 3x3 A (row-major):
+// { lam: eigenvalues, V: row-major matrix whose columns are the
+// eigenvectors }. Mirrors jacobiEigen() in the shader.
+export function jacobiEigen(A0) {
+  let A = A0.map(r => r.slice());
+  let V = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  const mul = (X, Y) => [0, 1, 2].map(i => [0, 1, 2].map(j => X[i][0] * Y[0][j] + X[i][1] * Y[1][j] + X[i][2] * Y[2][j]));
+  for (let sweep = 0; sweep < 6; sweep++) {
+    for (const [p, q] of [[0, 1], [0, 2], [1, 2]]) {
+      const apq = A[p][q];
+      if (Math.abs(apq) <= 1e-12 * (Math.abs(A[p][p]) + Math.abs(A[q][q]))) continue;
+      const theta = (A[q][q] - A[p][p]) / (2 * apq);
+      const t = (theta >= 0 ? 1 : -1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+      const c = 1 / Math.sqrt(t * t + 1), s = t * c;
+      const J = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+      J[p][p] = c; J[q][q] = c; J[p][q] = s; J[q][p] = -s;
+      A = mul(mul(mat3Transpose(J), A), J);
+      V = mul(V, J);
+    }
+  }
+  return { lam: [A[0][0], A[1][1], A[2][2]], V };
+}
+
+// Momentum (units of kappa, atom frame) of a streak for pixel key
+// [x, y, seed] and the detection at scaled point X; mode 'global' | 'local'
+// | 'axis'. Mirrors the momentum part of streakHalf().
+export function streakMomentum(tables, orbital, key, mode = 'global', X = null) {
+  if (mode === 'global') {
+    const dir = momentumDirection(orbital, key);
+    const q = momentumQ(tables, orbital.row,
+      u01(pcg4d(key[0] >>> 0, key[1] >>> 0, key[2] >>> 0, STREAM_MOMENTUM_Q >>> 0)[0]));
+    return dir.map(c => q * c);
+  }
+  const { lam, V } = jacobiEigen(localMomentumTensor(orbital, X));
+  const l = lam.map(v => Math.max(v, 0));
+  const r = pcg4d(key[0] >>> 0, key[1] >>> 0, key[2] >>> 0, STREAM_MOMENTUM_LOCAL >>> 0).map(u01);
+  const m0 = Math.sqrt(-2 * Math.log(1 - r[0])), m1 = Math.sqrt(-2 * Math.log(1 - r[2]));
+  const z = [m0 * Math.cos(2 * Math.PI * r[1]), m0 * Math.sin(2 * Math.PI * r[1]), m1 * Math.cos(2 * Math.PI * r[3])];
+  const zV = [0, 1, 2].map(k => V[0][k] * z[0] + V[1][k] * z[1] + V[2][k] * z[2]);
+  const fromBasis = w => [0, 1, 2].map(i => V[i][0] * w[0] + V[i][1] * w[1] + V[i][2] * w[2]);
+  if (mode === 'axis') {
+    // principal axis; random within the eigenspace of coinciding largest
+    // eigenvalues (spectral weight (lam / max)^8 on z)
+    const lmax = Math.max(...l);
+    const a = fromBasis(l.map((v, k) => (v / Math.max(lmax, 1e-30)) ** 8 * zV[k]));
+    const al = Math.hypot(...a);
+    return al > 0 ? a.map(c => Math.sqrt(lmax) * c / al) : [0, 0, 0];
+  }
+  // symmetric square root V sqrt(L) V^T z (independent of the eigenbasis)
+  return fromBasis(l.map((v, k) => Math.sqrt(v) * zV[k]));
+}
+
+// Streak half-vector (render-buffer pixels): the streak momentum rotated by
+// atomToView (row-major, = transpose of the shader's uRot), projected on the
+// screen, times len, clamped to rMax. Mirrors streakHalf().
+export function streakHalf(tables, orbital, key, atomToView, len, rMax, mode = 'global', X = null) {
+  const v = mat3MulVec(atomToView, streakMomentum(tables, orbital, key, mode, X));
+  let h = [len * v[0], len * v[1]];
   const l = Math.hypot(h[0], h[1]);
+  if (!(l < 1e30)) return [0, 0];
   if (l > rMax) h = [h[0] * rMax / l, h[1] * rMax / l];
   return h;
 }

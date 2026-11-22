@@ -10,14 +10,14 @@ const size = +params.get('size') || 800;
 const frames = +params.get('frames') || 20;
 const color = params.get('color') === 'blend' ? 'blend' : 'nearest';   // app default: nearest
 const cut = params.get('cut') === '1';
-const streaks = params.get('streaks') === '1';
+const streaks = { 1: 'global', global: 'global', local: 'local', axis: 'axis' }[params.get('streaks')] || false;
 
 const tables = await loadTables();
 const canvas = document.createElement('canvas');
 canvas.width = canvas.height = size;
 const r = createRenderer(canvas, tables);
 const px = new Uint8Array(4);
-const lines = [`size ${size}x${size}, ${frames} frames each, color ${color}${cut ? ', cut' : ''}${streaks ? ', streaks' : ''}`];
+const lines = [`size ${size}x${size}, ${frames} frames each, color ${color}${cut ? ', cut' : ''}${streaks ? `, streaks ${streaks}` : ''}`];
 const results = {};
 
 for (const z of zs) {

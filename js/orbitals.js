@@ -171,6 +171,10 @@ function radialRef(n, l) {
   return RADIAL_CACHE.get(key);
 }
 
+// R_ref(u) = norm exp(-u) P(u) u^l: { norm, poly } with poly the ascending
+// coefficients of P (a scaled Laguerre polynomial, degree n - l - 1).
+export function radialPolyRef(n, l) { return radialRef(n, l); }
+
 // R_ref(u) for reference charge Z0 = n.
 export function radialRefR(n, l, u) {
   const { norm, poly } = radialRef(n, l);

@@ -9,8 +9,9 @@ import {
   qAxisAngle, qMul, qToMat3, mat3MulVec, viewToAtom, mat3ToGL,
   meanR2, horizon, momentLookup, radialDensity, columnDensity, makeRng, poisson, pcg, hsvToRgb,
   columnRef, angularPoly, radialLookup, nearestDepthRef, NO_DEPTH,
-  angularMax2, momentumDirection, momentumQ, streakHalf,
+  angularMax2, momentumDirection, momentumQ, streakHalf, localMomentumTensor, jacobiEigen,
 } from '../js/math.js';
+import { radialRefR } from '../js/orbitals.js';
 import { STREAK_R } from '../js/shaders.js';
 import { createRenderer, viewGeometry, orbitalPeak, orbitalGains, MAX_VIEW_RADIUS, shapePeak, splitViews, STREAK_LEN } from '../js/renderer.js';
 import { loadTables } from '../js/tables.js';
@@ -991,11 +992,90 @@ test('momentum: A^2 bound covers the maximum; q table gives <q> = 8/(3 pi) for 1
   near(m / n, 8 / (3 * Math.PI), 0.003, '1s <q>');
 });
 
+test('local momentum: Jacobi diagonalises; 1s spread is tangential, 1/(2u) per direction', () => {
+  const { lam, V } = jacobiEigen([[2, 1, 0.5], [1, 3, -0.2], [0.5, -0.2, 1]]);
+  for (let k = 0; k < 3; k++) {
+    const v = [V[0][k], V[1][k], V[2][k]];
+    const Av = [2 * v[0] + v[1] + 0.5 * v[2], v[0] + 3 * v[1] - 0.2 * v[2], 0.5 * v[0] - 0.2 * v[1] + v[2]];
+    for (let i = 0; i < 3; i++) near(Av[i], lam[k] * v[i], 1e-9, `eigenpair ${k}`);
+  }
+  const X = [0.6, 0, 0.8].map(c => 2 * c);          // u = 2
+  const T = localMomentumTensor(ORBITALS[P('1s')], X);
+  const n = [0.6, 0, 0.8];
+  const radial = [0, 1, 2].reduce((a, i) => a + n[i] * [0, 1, 2].reduce((b, j) => b + T[i][j] * n[j], 0), 0);
+  near(radial, 0, 1e-9, 'radial');
+  near(T[1][1], 1 / 4, 1e-9, 'tangential (y)');
+});
+
+test('local momentum: |psi|^2-weighted local spread = the momentum distribution (2px, 3dz2, 2s)', () => {
+  // int rho T dV = <q q^T> = int A(n)^2 n n^T dOmega (<q^2> = 1), on a
+  // Fibonacci-sphere x radial-midpoint grid.
+  const nA = 400, nR = 500;
+  const dirs = [];
+  for (let i = 0; i < nA; i++) {
+    const z = 1 - 2 * (i + 0.5) / nA, r = Math.sqrt(1 - z * z), ph = i * 2.399963229728653;
+    dirs.push([r * Math.cos(ph), r * Math.sin(ph), z]);
+  }
+  for (const id of ['2px', '3dz2', '2s']) {
+    const o = ORBITALS[P(id)];
+    const uMax = 20 + 8 * o.n, du = uMax / nR;
+    const S = [0, 0, 0], E = [0, 0, 0];
+    let mass = 0, am = 0;
+    for (const n of dirs) {
+      const a2 = angularPoly(o, n, [0, 0, 0])[0] ** 2;
+      am += a2;
+      for (let i = 0; i < 3; i++) E[i] += a2 * n[i] * n[i];
+      for (let k = 0; k < nR; k++) {
+        const u = (k + 0.5) * du, R = radialRefR(o.n, o.l, u), w = R * R * a2 * u * u;
+        if (w === 0) continue;
+        const T = localMomentumTensor(o, n.map(c => c * u));
+        for (let i = 0; i < 3; i++) S[i] += w * T[i][i];
+        mass += w;
+      }
+    }
+    for (let i = 0; i < 3; i++) near(S[i] / mass, E[i] / am, 0.004, `${id} <q_${'xyz'[i]}^2>`);
+  }
+});
+
 // The detection pass of a streak frame for oxygen, rotated, nearest color.
 const STREAK_Q = qAxisAngle([0.3, 1, 0.2], 0.9);
 function streakFrame(k = 1, streaks = true) {
   return renderFrame(8, { color: 'nearest', streaks, seed: 5, q: STREAK_Q, density: 0.5, k, withDetections: true });
 }
+
+const halfFloat = b => {
+  const e = (b >>> 10) & 31, m = b & 1023, sgn = b & 32768 ? -1 : 1;
+  return sgn * (e === 0 ? m / 1024 * 2 ** -14 : (1 + m / 1024) * 2 ** (e - 15));
+};
+
+test('GPU streaks (local, axis): half-vectors match the CPU mirror at the detection\'s 3-D point', () => {
+  for (const mode of ['local', 'axis']) {
+    const { det, state } = streakFrame(1, mode);
+    const el = state.element;
+    const slotIdx = ORBITALS.map((o, i) => i).filter(i => el.occupancy[i] > 0);
+    const atomToView = qToMat3(STREAK_Q), viewToAtomM = viewToAtom(STREAK_Q);
+    const geo = viewGeometry(el, 256, 256, 1);
+    const d = mat3MulVec(viewToAtomM, [0, 0, 1]);
+    const f32 = new Float32Array(det.data.buffer);
+    let n = 0, bad = 0, nonzero = 0;
+    for (let y = 0; y < 256; y++) for (let x = 0; x < 256; x++) {
+      const i = 4 * (y * 256 + x);
+      if ((det.data[i] >>> 24) !== 1) continue;
+      n++;
+      const oi = slotIdx[det.data[i + 3]], o = ORBITALS[oi], kappa = el.zeff[oi] / o.n;
+      const xy = [((x + 0.5) / 128 - 1) * geo.halfExtent[0], ((y + 0.5) / 128 - 1) * geo.halfExtent[1]];
+      const p = mat3MulVec(viewToAtomM, [xy[0], xy[1], 0]);
+      const X = [0, 1, 2].map(c => kappa * (p[c] + f32[i + 2] * d[c]));
+      const want = streakHalf(TABLES, o, [x, y, state.seed], atomToView, STREAK_LEN, STREAK_R, mode, X);
+      const h = [halfFloat(det.data[i + 1] & 65535), halfFloat(det.data[i + 1] >>> 16)];
+      if (Math.hypot(...h) > 0.5) nonzero++;
+      if (Math.hypot(h[0] - want[0], h[1] - want[1]) > 0.02 + 5e-3 * Math.hypot(...want)) bad++;
+    }
+    assert(n > 2000, `${mode}: only ${n} detections`);
+    assert(nonzero > n / 3, `${mode}: only ${nonzero}/${n} visible streaks`);
+    assert(bad <= n * 0.005, `${mode}: ${bad}/${n} streaks differ from the CPU mirror`);
+  }
+});
 
 test('GPU streaks: detections match the plain nearest render and the CPU momentum mirror', () => {
   const { det, state } = streakFrame();
