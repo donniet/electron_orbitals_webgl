@@ -14,9 +14,19 @@
 //                 momentum streak: instead of a color this pass writes a
 //                 packed texel (color, streak half-vector, depth) that
 //                 shaders/streak.glsl draws as short lines.
-//   NUM_ROWS      (with STREAKS) number of radial table rows
+//   PALETTES      (optional) per-detection palettes, phase and momentum
+//                 (nearest color), see uPalette
+//   NUM_ROWS      (with STREAKS or PALETTES) number of radial table rows
 #ifndef NUM_ORBITALS
 #error NUM_ORBITALS must be defined by the host (createProgram defines)
+#endif
+// The nearest detection's 3-D point and the local momentum spread there are
+// needed only by streaks and the per-detection palettes.
+#if defined(STREAKS) || defined(PALETTES)
+#define NEAR_POINT
+#ifndef NUM_ROWS
+#error NUM_ROWS must be defined by the host (createProgram defines)
+#endif
 #endif
 
 // Steps of the march along a ray that places an orbital's nearest detection
@@ -81,6 +91,21 @@ uniform int   uColorMode;   // 0 = blend every orbital's detections;
 uniform float uFog;
 uniform float uFogRadius;    // Bohr: the element's atomic radius
 const float FOG_SCALE = 3.0; // uFog = 1: e^-9 at the back
+#ifdef PALETTES
+// Per-detection palettes (nearest color only; js/orbitals.js): 0 = the
+// orbitals' own hue and chroma; 1 = phase: sign of psi at the nearest
+// detection, hue uPaletteHues.x (+) or .y (-); 2 = momentum: its local RMS
+// momentum p (atomic units), hue mixed from .x (slow) to .y (fast) by
+// t = (ln p - uMomentumRange.x) / (uMomentumRange.y - uMomentumRange.x).
+uniform int   uPalette;
+uniform vec2  uPaletteHues;  // hues in [0, 1)
+uniform vec2  uMomentumRange;
+#endif
+#ifdef NEAR_POINT
+// Radial polynomial P of each row, R_ref = norm exp(-u) P(u) u^l: ascending
+// coefficients c0..c7 in two vec4 per row (phase, momentum, local streaks).
+uniform vec4  uRadialPoly[2 * NUM_ROWS];
+#endif
 
 #ifdef STREAKS
 // Momentum streaks: inverse CDF of each row's radial momentum density
@@ -94,9 +119,6 @@ uniform float uStreakLen;
 // 1: local  -- a sample of the local momentum spread at the detection;
 // 2: axis   -- the principal axis of that local spread.
 uniform int   uStreakMode;
-// Radial polynomial P of each row, R_ref = norm exp(-u) P(u) u^l: ascending
-// coefficients c0..c7 in two vec4 per row (local modes).
-uniform vec4  uRadialPoly[2 * NUM_ROWS];
 #endif
 
 // Occupied, visible orbitals, packed into the first uCount slots of a
@@ -138,12 +160,18 @@ float columnRef(Orbital o, vec3 P, vec3 d);
 float radialAt(int row, float u);
 float rayDensityS(int row, vec4 A, float u2, float H, float s);
 float nearestDepthRef(Orbital o, vec3 P, vec3 d, int k, float massRef, float v, float tStop);
+#ifdef PALETTES
+float psiSign(Orbital o, vec3 X);
+float localMomentum(Orbital o, vec3 X);
+#endif
+#ifdef NEAR_POINT
+mat3  hessLogPsi(Orbital o, vec3 X);
+vec3  jacobiEigen(mat3 A, out mat3 V);
+#endif
 #ifdef STREAKS
 vec3  momentumDirection(Orbital o, uvec3 key);
 float momentumQ(int row, float F);
 vec2  streakHalf(Orbital o, uvec3 key, vec3 X);
-mat3  hessLogPsi(Orbital o, vec3 X);
-vec3  jacobiEigen(mat3 A, out mat3 V);
 #endif
 // 2. Rendering helpers
 vec3  hsv2rgb(vec3 c);
@@ -172,7 +200,7 @@ void main() {
   float nearSat = 0.0;
   vec2 nearChroma = vec2(0.0);
   int nearSlot = -1;
-#ifdef STREAKS
+#ifdef NEAR_POINT
   vec3 nearX = vec3(0.0);     // the nearest detection, scaled by its orbital's kappa
 #endif
 
@@ -205,7 +233,7 @@ void main() {
         nearSat = sat;
         nearChroma = c;
         nearSlot = i;
-#ifdef STREAKS
+#ifdef NEAR_POINT
         nearX = P + tRef * d;
 #endif
       }
@@ -215,6 +243,21 @@ void main() {
     // Only the nearest orbital's detections are shown, in its own color.
     chroma = nearChroma;
     total = nearSat;
+#ifdef PALETTES
+    if (uPalette != 0 && nearSlot >= 0) {
+      // Per-detection palettes color the nearest detection itself.
+      Orbital o = uOrbitals[nearSlot];
+      vec2 h0 = vec2(cos(TWO_PI * uPaletteHues.x), sin(TWO_PI * uPaletteHues.x));
+      vec2 h1 = vec2(cos(TWO_PI * uPaletteHues.y), sin(TWO_PI * uPaletteHues.y));
+      if (uPalette == 1) {
+        chroma = nearSat * (psiSign(o, nearX) >= 0.0 ? h0 : h1);
+      } else {
+        float t = (log(localMomentum(o, nearX)) - uMomentumRange.x)
+                / (uMomentumRange.y - uMomentumRange.x);
+        chroma = nearSat * mix(h0, h1, clamp(t, 0.0, 1.0));
+      }
+    }
+#endif
     if (uFog > 0.0 && nearSlot >= 0) {
       // Scaling chroma and total together dims the detection, keeping its
       // hue and purity; applied before the theme, so white stays the dual.
@@ -405,46 +448,38 @@ float nearestDepthRef(Orbital o, vec3 P, vec3 d, int k, float massRef, float v, 
   return -H;    // short of the target by the quadrature error: the back end
 }
 
-#ifdef STREAKS
-// --- Momentum (streaks) ---------------------------------------------------
-// A detected position has no definite momentum, and the probability current
-// of these real orbitals is zero, so there is no local velocity to draw.
-// What is defined is the orbital's momentum distribution |phi(p)|^2, phi the
-// Fourier transform of psi: it keeps psi's angular part A^2 and has its own
-// radial part (tools/orbitals.py). A streak is one sample of that momentum,
-// independent of where the detection lies: "what a momentum measurement of
-// this electron would give instead". |phi(p)|^2 = |phi(-p)|^2, so streaks
-// are undirected segments centred on the detection.
-
-// Unit momentum direction with density A(p)^2: rejection from the uniform
-// sphere against the bound c2.w (s: uniform). Mirrored in js/math.js.
-vec3 momentumDirection(Orbital o, uvec3 key) {
-  bool isS = o.kind.x < 0.5;
-  vec3 dir = vec3(0.0, 0.0, 1.0);
-  for (int j = 0; j < MOMENTUM_TRIES; j++) {
-    uvec4 r = pcg4d(uvec4(key, STREAM_MOMENTUM_DIR + uint(j)));
-    float z = 2.0 * u01(r.x) - 1.0;
-    float s = sqrt(max(0.0, 1.0 - z * z));
-    float ph = TWO_PI * u01(r.y);
-    dir = vec3(s * cos(ph), s * sin(ph), z);
-    if (isS) return dir;
-    float a = angularPoly(o, dir, vec3(0.0)).x;       // A at the unit vector
-    if (u01(r.z) * o.c2.w <= a * a) return dir;
-  }
-  return dir;
+#ifdef NEAR_POINT
+// --- At the nearest detection (palettes, local streaks) -------------------
+// Sign of psi_ref at scaled point X: psi_ref ~ exp(-u) P(u) u^l A(X/u), and
+// u^l A(X/u) = A(X) (homogeneous of degree l), so sign = sign P(u) sign A(X).
+// The overall sign of each orbital is a convention (P(0) > 0 and the
+// angular forms of js/orbitals.js); only the pattern of + and - lobes, and
+// the nodes between them, is physical. Mirrored in js/math.js.
+#ifdef PALETTES
+float psiSign(Orbital o, vec3 X) {
+  int row = int(o.kind.y + 0.5);
+  float u = length(X);
+  vec4 c0 = uRadialPoly[2 * row], c1 = uRadialPoly[2 * row + 1];
+  float P = c1.w;
+  P = P * u + c1.z; P = P * u + c1.y; P = P * u + c1.x;
+  P = P * u + c0.w; P = P * u + c0.z; P = P * u + c0.y; P = P * u + c0.x;
+  float A = angularPoly(o, X, vec3(0.0)).x;
+  return (P < 0.0) != (A < 0.0) ? -1.0 : 1.0;
 }
 
-// Scaled momentum q for uniform F from the inverse-CDF table (lerp,
-// clamped at the ends). Mirrored in js/math.js.
-float momentumQ(int row, float F) {
-  float x = clamp(F * float(uTableN) - 0.5, 0.0, float(uTableN - 1));
-  int i = min(int(x), uTableN - 2);
-  float f = x - float(i);
-  return mix(texelFetch(uMomentumTables, ivec2(i, row), 0).r,
-             texelFetch(uMomentumTables, ivec2(i + 1, row), 0).r, f);
+// Local RMS momentum at scaled point X, in atomic units: kappa times the
+// square root of the trace of the local momentum spread T (below), its
+// negative part dropped as for the streaks. Large near the nucleus and
+// near nodes. Mirrored in js/math.js.
+float localMomentum(Orbital o, vec3 X) {
+  mat3 V;
+  vec3 lam = max(jacobiEigen(-0.5 * hessLogPsi(o, X), V), 0.0);
+  float p = o.orb.y * sqrt(lam.x + lam.y + lam.z);
+  return p < 1e30 ? max(p, 1e-30) : 1e30;               // finite, also at nodes
 }
+#endif
 
-// Local momentum spread at the detection (modes 1, 2). With x and p not
+// Local momentum spread at a detection (palettes; streak modes 1, 2). With x and p not
 // commuting there is no joint distribution, but the Wigner function gives
 // the second moment of momentum at a point x. For real psi it is
 //     T(x) = <p p^T>_x = -(hbar^2 / 2) Hess ln|psi(x)|,
@@ -518,6 +553,46 @@ vec3 jacobiEigen(mat3 A, out mat3 V) {
   return vec3(A[0][0], A[1][1], A[2][2]);
 }
 #undef JACOBI_ROT
+#endif
+
+#ifdef STREAKS
+// --- Momentum (streaks) ---------------------------------------------------
+// A detected position has no definite momentum, and the probability current
+// of these real orbitals is zero, so there is no local velocity to draw.
+// What is defined is the orbital's momentum distribution |phi(p)|^2, phi the
+// Fourier transform of psi: it keeps psi's angular part A^2 and has its own
+// radial part (tools/orbitals.py). A streak is one sample of that momentum,
+// independent of where the detection lies: "what a momentum measurement of
+// this electron would give instead". |phi(p)|^2 = |phi(-p)|^2, so streaks
+// are undirected segments centred on the detection.
+
+// Unit momentum direction with density A(p)^2: rejection from the uniform
+// sphere against the bound c2.w (s: uniform). Mirrored in js/math.js.
+vec3 momentumDirection(Orbital o, uvec3 key) {
+  bool isS = o.kind.x < 0.5;
+  vec3 dir = vec3(0.0, 0.0, 1.0);
+  for (int j = 0; j < MOMENTUM_TRIES; j++) {
+    uvec4 r = pcg4d(uvec4(key, STREAM_MOMENTUM_DIR + uint(j)));
+    float z = 2.0 * u01(r.x) - 1.0;
+    float s = sqrt(max(0.0, 1.0 - z * z));
+    float ph = TWO_PI * u01(r.y);
+    dir = vec3(s * cos(ph), s * sin(ph), z);
+    if (isS) return dir;
+    float a = angularPoly(o, dir, vec3(0.0)).x;       // A at the unit vector
+    if (u01(r.z) * o.c2.w <= a * a) return dir;
+  }
+  return dir;
+}
+
+// Scaled momentum q for uniform F from the inverse-CDF table (lerp,
+// clamped at the ends). Mirrored in js/math.js.
+float momentumQ(int row, float F) {
+  float x = clamp(F * float(uTableN) - 0.5, 0.0, float(uTableN - 1));
+  int i = min(int(x), uTableN - 2);
+  float f = x - float(i);
+  return mix(texelFetch(uMomentumTables, ivec2(i, row), 0).r,
+             texelFetch(uMomentumTables, ivec2(i + 1, row), 0).r, f);
+}
 
 // Streak half-vector on screen (render-buffer pixels) for the detection at
 // scaled point X: a momentum in units of kappa (so every shell shows its own

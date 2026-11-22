@@ -3,7 +3,8 @@
 import { createContext, createProgram, createTableTexture, createEmptyVAO, createUintTarget,
   resizeUintTarget } from './gl.js';
 import { VERT, FRAG, STREAK_FRAG, SHADER_DEFINES, STREAK_DEFINES, STREAK_R } from './shaders.js';
-import { ORBITALS, NUM_ORBITALS, angularCoefs, orbitalColor, radialPolyRef } from './orbitals.js';
+import { ORBITALS, NUM_ORBITALS, angularCoefs, orbitalColor, radialPolyRef, NEAREST_ONLY_SCHEMES,
+  PALETTE_COLORS } from './orbitals.js';
 import { ELEMENTS } from './elements.js';
 import { viewToAtom, mat3ToGL, momentLookup, columnRef, angularMax2 } from './math.js';
 
@@ -20,6 +21,27 @@ export const STREAK_MODES = { global: 0, local: 1, axis: 2 };
 export function streakParam(v) {
   if (v === '1' || v === 'global') return 'global';
   return v === 'local' || v === 'axis' ? v : false;
+}
+
+// Per-detection palettes (nearest color only) -> uPalette.
+const PALETTES = { phase: 1, momentum: 2 };
+
+// Momentum palette range, shared by every pane: ln p (atomic units) at the
+// slow and fast ends. An orbital's RMS momentum is kappa = Z_eff / n
+// (<q^2> = 1), so the range runs from half the slowest occupied orbital's
+// kappa to twice the fastest's (the 1s), the middle (neutral) at their
+// geometric mean.
+export function momentumRange(elements) {
+  let lo = Infinity, hi = 0;
+  for (const el of elements) {
+    ORBITALS.forEach((o, i) => {
+      if (!(el.occupancy[i] > 0)) return;
+      const kappa = el.zeff[i] / o.n;
+      lo = Math.min(lo, kappa);
+      hi = Math.max(hi, kappa);
+    });
+  }
+  return [Math.log(lo / 2), Math.log(hi * 2)];
 }
 
 // ------------------------------------------------------------ peaks
@@ -159,10 +181,11 @@ export function splitViews(W, H, k = 1, n = 1) {
 // ------------------------------------------------------------ renderer
 export function createRenderer(canvas, tables) {
   const gl = createContext(canvas);
-  // The physics pass: `main` writes colors; `det` (streaks, compiled with
-  // STREAKS) writes packed detections that the `streak` pass draws as lines.
-  const main = createProgram(gl, VERT, FRAG, { defines: SHADER_DEFINES });
-  const det = createProgram(gl, VERT, FRAG, { defines: { ...STREAK_DEFINES, NUM_ROWS: tables.rows.length } });
+  // The physics pass, compiled per feature set (see physicsProgram below):
+  // plain, it writes colors; with STREAKS it writes packed detections that
+  // the `streak` pass draws as lines; PALETTES adds the per-detection
+  // palettes (phase, momentum), kept out of the default program, which is
+  // measurably faster without them.
   const streak = createProgram(gl, VERT, STREAK_FRAG, { defines: { STREAK_R } });
   const tex = createTableTexture(gl, tables.data, tables.N, tables.rows.length);
   const oddTex = createTableTexture(gl, tables.odd, tables.N, tables.rows.length);
@@ -182,21 +205,33 @@ export function createRenderer(canvas, tables) {
   // only the occupied, visible orbitals are packed (in canonical order) into
   // the first uCount slots.
   const STRIDE = 20;                                   // floats per Orbital
-  for (const { prog, uniforms: u } of [main, det]) {
-    gl.useProgram(prog);
-    gl.uniform1i(u.uTables, 0);
-    gl.uniform1i(u.uOddTables, 1);
-    gl.uniform1i(u.uRadialTables, 2);
-    if (u.uMomentumTables) gl.uniform1i(u.uMomentumTables, 3);
-    gl.uniform1i(u.uTableN, tables.N);
-    gl.uniform1f(u.uTableUMax, tables.uMax);
-    gl.uniformBlockBinding(prog, gl.getUniformBlockIndex(prog, 'Orbitals'), 0);
-  }
-  // Radial polynomials of every table row for the local streak modes.
-  gl.useProgram(det.prog);
+  // Radial polynomials of every table row (palettes, local streak modes).
   const polys = new Float32Array(8 * tables.rows.length);
   tables.rows.forEach((r, i) => polys.set(radialPolyRef(r.n, r.l).poly, 8 * i));
-  gl.uniform4fv(det.uniforms.uRadialPoly, polys);
+  const physics = new Map();
+  function physicsProgram(streaks, palettes) {
+    const key = `${+streaks}${+palettes}`;
+    if (!physics.has(key)) {
+      const defines = { ...(streaks ? STREAK_DEFINES : SHADER_DEFINES) };
+      if (palettes) defines.PALETTES = 1;
+      if (streaks || palettes) defines.NUM_ROWS = tables.rows.length;
+      const p = createProgram(gl, VERT, FRAG, { defines });
+      const { prog, uniforms: u } = p;
+      gl.useProgram(prog);
+      gl.uniform1i(u.uTables, 0);
+      gl.uniform1i(u.uOddTables, 1);
+      gl.uniform1i(u.uRadialTables, 2);
+      if (u.uMomentumTables) gl.uniform1i(u.uMomentumTables, 3);
+      gl.uniform1i(u.uTableN, tables.N);
+      gl.uniform1f(u.uTableUMax, tables.uMax);
+      if (u.uRadialPoly) gl.uniform4fv(u.uRadialPoly, polys);
+      gl.uniformBlockBinding(prog, gl.getUniformBlockIndex(prog, 'Orbitals'), 0);
+      physics.set(key, p);
+    }
+    return physics.get(key);
+  }
+  physicsProgram(false, false);                        // the default, and
+  physicsProgram(true, false);                         // streaks, up front
   gl.useProgram(streak.prog);
   gl.uniform1i(streak.uniforms.uDetections, 4);
   const ubo = gl.createBuffer();
@@ -229,7 +264,8 @@ export function createRenderer(canvas, tables) {
    *   color    - 'blend' (every orbital's detections mixed) | 'nearest'
    *               (only the orbital with the detection nearest the viewer),
    *   visible   - boolean per orbital,
-   *   scheme    - color scheme (orbitals.js COLOR_SCHEMES; default 'shape'),
+   *   scheme    - color scheme (orbitals.js COLOR_SCHEMES; default 'shape';
+   *               phase and momentum need 'nearest' color, else 'shape'),
    *   fog       - depth fog strength in [0, 1] ('nearest' color; 0 = off):
    *               brightness exp(-(3 fog d)^2), d the distance behind the front
    *               of the atom (its radius, or the cut plane) as a fraction
@@ -298,8 +334,13 @@ export function createRenderer(canvas, tables) {
     const W = canvas.width, H = canvas.height;
     const BW = Math.ceil(W / k), BH = Math.ceil(H / k);
     const colorTarget = k > 1 ? lowResTarget(BW, BH) : null;
-    const streaks = !!state.streaks && state.color === 'nearest';
-    const { prog, uniforms: u } = streaks ? det : main;
+    const nearest = state.color === 'nearest';
+    const streaks = !!state.streaks && nearest;
+    // Phase and momentum color detections, so need nearest color; in blend
+    // they fall back to the orbitals' shape colors.
+    const perDetection = nearest && NEAREST_ONLY_SCHEMES.has(state.scheme);
+    const scheme = !nearest && NEAREST_ONLY_SCHEMES.has(state.scheme) ? 'shape' : state.scheme;
+    const { prog, uniforms: u } = physicsProgram(streaks, perDetection);
     gl.useProgram(prog);
     if (streaks) {
       gl.activeTexture(gl.TEXTURE4);                       // its unit (see above)
@@ -321,6 +362,12 @@ export function createRenderer(canvas, tables) {
     gl.uniform1f(u.uCut, state.cut ? -1 : 0);              // every pane
     gl.uniform1i(u.uColorMode, state.color === 'nearest' ? 1 : 0);
     gl.uniform1f(u.uFog, state.fog ?? 0);
+    if (perDetection) {
+      gl.uniform1i(u.uPalette, PALETTES[state.scheme]);
+      const [a, b] = Object.values(PALETTE_COLORS[state.scheme]);
+      gl.uniform2f(u.uPaletteHues, a[0] / 360, b[0] / 360);
+      gl.uniform2f(u.uMomentumRange, ...momentumRange(views.map(v => v.element)));
+    }
 
     const geos = views.map(({ element: el, visible = ALL_VISIBLE, rect }) => {
       const bw = Math.ceil(rect.w / k), bh = Math.ceil(rect.h / k);
@@ -329,7 +376,7 @@ export function createRenderer(canvas, tables) {
         state.bohrPerPixel ?? null);
       const viewArea = 4 * geo.halfExtent[0] * geo.halfExtent[1];
       const gains = orbitalGains(tables, el, state.density, viewArea, state.equalize);
-      const count = uploadOrbitals(el, visible, gains, state.scheme);
+      const count = uploadOrbitals(el, visible, gains, scheme);
 
       // The pane's 1/k buffer region covers bw*k x bh*k device pixels
       // (>= rect); the vertex shader scales its NDC so geometry matches

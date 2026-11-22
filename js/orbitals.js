@@ -212,8 +212,28 @@ function depthChroma(orbital, element) {
 //  gray      no hue: brightness only
 //  subshell  hue = l (s, p, d, f), chroma by depth (s included)
 //  shell     hue = n, the radial chart's shell colors, full chroma
-export const COLOR_SCHEMES = ['shape', 'gray', 'subshell', 'shell'];
-export const SCHEME_LABELS = { shape: 'Shape', gray: 'Gray', subshell: 'Subshell (s p d f)', shell: 'Shell (n)' };
+//  valence   core (paler blue) vs valence (amber), see isValence
+// Per detection, nearest color only (the renderer colors the nearest
+// detection itself; per orbital these have no color):
+//  phase     sign of psi at the detection: + red, - blue
+//  momentum  local RMS momentum at the detection: slow blue -> fast amber
+export const COLOR_SCHEMES = ['shape', 'gray', 'subshell', 'shell', 'valence', 'phase', 'momentum'];
+export const SCHEME_LABELS = {
+  shape: 'Shape', gray: 'Gray', subshell: 'Subshell (s p d f)', shell: 'Shell (n)',
+  valence: 'Core / valence', phase: 'Phase (sign of ψ)', momentum: 'Momentum (local)',
+};
+export const NEAREST_ONLY_SCHEMES = new Set(['phase', 'momentum']);
+
+// Two-color palettes [hue (degrees), chroma]. As drawn by the renderer (full
+// value; white theme the dual) each pair passes the dataviz palette
+// validator's CVD check in both themes (worst dE 26 core/valence, 31 phase,
+// 31 momentum). Phase follows the textbook red +, blue -. The momentum
+// hues are opposite, so mixing them passes through neutral gray halfway.
+export const PALETTE_COLORS = {
+  valence: { core: [205, 0.6], valence: [35, 1] },
+  phase: { plus: [0, 1], minus: [210, 1] },
+  momentum: { slow: [220, 1], fast: [40, 1] },
+};
 
 // URL value -> scheme ('shape' for anything unknown).
 export function schemeParam(v) { return COLOR_SCHEMES.includes(v) ? v : 'shape'; }
@@ -243,6 +263,11 @@ export function orbitalColor(orbital, element, scheme = 'shape') {
     case 'gray': return { hue: 0, chroma: 0 };
     case 'subshell': return { hue: L_HUE[orbital.l], chroma: depthChroma(orbital, element) };
     case 'shell': return { hue: SHELL_HUE[orbital.n], chroma: 1 };
+    case 'valence': {
+      const [hue, chroma] = PALETTE_COLORS.valence[isValence(orbital, element) ? 'valence' : 'core'];
+      return { hue, chroma };
+    }
+    case 'phase': case 'momentum': return { hue: 0, chroma: 0 };
     default: return { hue: orbital.hue, chroma: orbitalChroma(orbital, element) };
   }
 }

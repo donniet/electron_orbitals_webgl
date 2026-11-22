@@ -4,16 +4,16 @@
 // "PASS n/n" or "FAIL k/n" so headless runs can read it.
 
 import { ELEMENTS, ORBITALS, aufbau, hundFill, stepElement } from '../js/elements.js';
-import { SUBSHELLS, orbitalIndex, orbitalsOf, isValence, angularCoefs, orbitalChroma, orbitalColor, COLOR_SCHEMES, SHELL_COLORS, L_HUE } from '../js/orbitals.js';
+import { SUBSHELLS, orbitalIndex, orbitalsOf, isValence, angularCoefs, orbitalChroma, orbitalColor, COLOR_SCHEMES, SHELL_COLORS, L_HUE, PALETTE_COLORS } from '../js/orbitals.js';
 import {
   qAxisAngle, qMul, qToMat3, mat3MulVec, viewToAtom, mat3ToGL,
   meanR2, horizon, momentLookup, radialDensity, columnDensity, makeRng, poisson, pcg, hsvToRgb,
   columnRef, angularPoly, radialLookup, nearestDepthRef, NO_DEPTH,
-  angularMax2, momentumDirection, momentumQ, streakHalf, localMomentumTensor, jacobiEigen,
+  angularMax2, momentumDirection, momentumQ, streakHalf, localMomentumTensor, jacobiEigen, psiSign, localMomentum,
 } from '../js/math.js';
 import { radialRefR } from '../js/orbitals.js';
 import { STREAK_R } from '../js/shaders.js';
-import { createRenderer, viewGeometry, orbitalPeak, orbitalGains, MAX_VIEW_RADIUS, shapePeak, splitViews, STREAK_LEN } from '../js/renderer.js';
+import { createRenderer, viewGeometry, orbitalPeak, orbitalGains, MAX_VIEW_RADIUS, shapePeak, splitViews, STREAK_LEN, momentumRange } from '../js/renderer.js';
 import { loadTables } from '../js/tables.js';
 import { atomsOf, paneViews, subshellUnion, occupiedAny, valenceUnion, defaultExpandedShells, collapsedRows, tableRow } from '../js/selection.js';
 import { createScaleAnimator } from '../js/view.js';
@@ -1283,6 +1283,65 @@ test('GPU color schemes: same brightness per pixel, gray is neutral, white the d
   }
 });
 
+test('palettes: core/valence per orbital; sign of psi and local momentum (CPU)', () => {
+  const fe = ELEMENTS[25];
+  const P = id => ORBITALS[orbitalIndex(id)];
+  near(orbitalColor(P('3d' + 'xy'), fe, 'valence').hue, PALETTE_COLORS.valence.valence[0], 0, '3d valence in Fe');
+  near(orbitalColor(P('2s'), fe, 'valence').hue, PALETTE_COLORS.valence.core[0], 0, '2s core in Fe');
+  // 2s: + inside its radial node (u = 1 in scaled units), - outside.
+  assert(psiSign(P('2s'), [0, 0, 0.5]) === 1 && psiSign(P('2s'), [0, 0, 2]) === -1, '2s radial node');
+  // 2p_x: sign of x; 3p_x: also flips across its radial node (u = 2).
+  assert(psiSign(P('2px'), [1, 0.3, 0]) === 1 && psiSign(P('2px'), [-1, 0.3, 0]) === -1, '2px sign of x');
+  assert(psiSign(P('3px'), [1, 0, 0]) === -psiSign(P('3px'), [3, 0, 0]), '3px radial node');
+  // 1s: T = (I - rr) / (2u), trace 1/u, so p = kappa / sqrt(u).
+  for (const u of [0.25, 1, 4]) near(localMomentum(P('1s'), [0, u, 0], 3), 3 / Math.sqrt(u), 1e-9, `1s p at u=${u}`);
+  const [lo, hi] = momentumRange([fe]);
+  near(hi, Math.log(2 * fe.zeff[orbitalIndex('1s')]), 1e-12, 'fast end: twice the 1s kappa');
+  assert(lo < Math.log(fe.zeff[orbitalIndex('4s')] / 4) + 1e-9, 'slow end below the 4s kappa');
+});
+
+test('GPU phase and momentum palettes match the CPU mirror at each detection', () => {
+  for (const [z, scheme] of [[10, 'phase'], [18, 'phase'], [18, 'momentum']]) {
+    const { det, state } = renderFrame(z, { color: 'nearest', streaks: 'axis', scheme, seed: 5, q: STREAK_Q,
+      density: 0.5, withDetections: true });
+    const el = state.element;
+    const slotIdx = ORBITALS.map((o, i) => i).filter(i => el.occupancy[i] > 0);
+    const viewToAtomM = viewToAtom(STREAK_Q);
+    const geo = viewGeometry(el, 256, 256, 1);
+    const d = mat3MulVec(viewToAtomM, [0, 0, 1]);
+    const f32 = new Float32Array(det.data.buffer);
+    const [lo, hi] = momentumRange([el]);
+    let n = 0, bad = 0, minus = 0, judged = 0;
+    for (let y = 0; y < 256; y++) for (let x = 0; x < 256; x++) {
+      const i = 4 * (y * 256 + x);
+      if ((det.data[i] >>> 24) !== 1) continue;
+      const rgb = [0, 8, 16].map(sh => (det.data[i] >>> sh) & 255);
+      if (Math.max(...rgb) < 40) continue;                      // too dim to judge the hue
+      n++;
+      const oi = slotIdx[det.data[i + 3]], o = ORBITALS[oi], kappa = el.zeff[oi] / o.n;
+      const xy = [((x + 0.5) / 128 - 1) * geo.halfExtent[0], ((y + 0.5) / 128 - 1) * geo.halfExtent[1]];
+      const p = mat3MulVec(viewToAtomM, [xy[0], xy[1], 0]);
+      const X = [0, 1, 2].map(c => kappa * (p[c] + f32[i + 2] * d[c]));
+      const warm = rgb[0] > rgb[2];                             // red/amber vs blue
+      if (scheme === 'phase') {
+        const sgn = psiSign(o, X);
+        if (sgn < 0) minus++;
+        judged++;
+        if (warm !== (sgn > 0)) bad++;
+      } else {
+        const t = (Math.log(localMomentum(o, X, kappa)) - lo) / (hi - lo);
+        if (Math.abs(t - 0.5) < 0.05) continue;                 // near neutral
+        judged++;
+        if (warm !== (t > 0.5)) bad++;
+      }
+    }
+    assert(n > 2000, `${scheme} Z=${z}: only ${n} detections`);
+    if (scheme === 'phase') assert(minus > n / 10 && minus < 0.9 * n, `${scheme} Z=${z}: ${minus}/${n} negative`);
+    assert(judged > n / 2, `${scheme} Z=${z}: only ${judged}/${n} judged`);
+    assert(bad <= judged * 0.005, `${scheme} Z=${z}: ${bad}/${judged} colors differ from the CPU mirror`);
+  }
+});
+
 await testAsync('app: Palette menu follows the URL, recolors legend swatches, carried to print', async () => {
   const f = document.createElement('iframe');
   f.style.cssText = 'position:absolute;left:-10000px;width:1400px;height:1000px';
@@ -1302,6 +1361,14 @@ await testAsync('app: Palette menu follows the URL, recolors legend swatches, ca
   const gray = swatches();
   assert(gray.length === shell.length && gray.join() !== shell.join(), 'swatches recolored');
   assert(gray.every(c => { const m = c.match(/\d+/g); return m && m[0] === m[1] && m[1] === m[2]; }), `gray swatches: ${gray[0]}`);
+  assert(q('#palette-key').hidden, 'no key for gray');
+  q('input[name=colormode][value=blend]').click();
+  sel.value = 'phase';
+  sel.dispatchEvent(new Event('change'));
+  assert(q('input[name=colormode][value=nearest]').checked, 'phase switches to nearest');
+  assert(!q('#palette-key').hidden && q('#palette-key').textContent.includes('ψ < 0'), 'phase key');
+  q('input[name=colormode][value=blend]').click();
+  assert(!q('#palette-note').hidden, 'note: phase needs nearest');
   f.remove();
   const p = await loadFrame('../print.html?z=26&seed=7&paper=letter&grain=4&scheme=subshell');
   const cap = p.contentDocument.getElementById('caption').textContent;

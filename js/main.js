@@ -15,7 +15,8 @@
 //   ?spin=0       start without the slow default rotation
 //   ?res=full     noise canvas resolution: auto (default) | full | half
 //   ?kmax=4       counts for full brightness
-//   ?scheme=gray  color scheme: shape (default) | gray | subshell | shell
+//   ?scheme=gray  color scheme: shape (default) | gray | subshell | shell | valence |
+//                 phase | momentum (the last two: nearest color)
 //   ?fog=0.6      depth fog on, at this strength (nearest color)
 //   ?gamma=0.5    tone gamma
 //   ?record=1     open the video recording controls
@@ -23,7 +24,7 @@
 import { elementByZ, ELEMENTS, ORBITALS } from './elements.js';
 import { qAxisAngle, qMul, qNormalize } from './math.js';
 import { createRenderer, baseHalf, viewGeometry, splitViews, streakParam } from './renderer.js';
-import { schemeParam } from './orbitals.js';
+import { schemeParam, NEAREST_ONLY_SCHEMES } from './orbitals.js';
 import { createScaleAnimator, prefersReducedMotion, defaultOrientation } from './view.js';
 import { loadTables } from './tables.js';
 import { attachControls } from './controls.js';
@@ -187,7 +188,11 @@ const app = {
   setFixedScale(b) { state.fixedScale = b; syncControls(state); dirty = true; },
   setCut(b) { state.cut = b; syncControls(state); dirty = true; },
   setColor(m) { state.color = m; syncControls(state); dirty = true; },
-  setScheme(s) { state.scheme = s; syncControls(state); updateElement(app); dirty = true; },
+  setScheme(s) {
+    state.scheme = s;
+    if (NEAREST_ONLY_SCHEMES.has(s)) state.color = 'nearest';   // they color detections
+    syncControls(state); updateElement(app); dirty = true;
+  },
   setStreaks(m) { state.streaks = m; syncControls(state); dirty = true; },
   setFog(on) { state.fogOn = on; syncControls(state); dirty = true; },
   setFogStrength(s) { state.fogStrength = s; syncControls(state); dirty = true; },

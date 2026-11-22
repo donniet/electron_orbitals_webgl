@@ -297,6 +297,33 @@ export function localMomentumTensor(orbital, X) {
   return hessLogPsi(orbital, X).map(row => row.map(c => -0.5 * c));
 }
 
+// Sign of psi_ref at scaled point X: sign P(u) * sign A(X). Mirrors
+// psiSign() in the shader (phase palette).
+export function psiSign(orbital, X) {
+  const u = Math.hypot(X[0], X[1], X[2]);
+  const cs = radialPolyRef(orbital.n, orbital.l).poly;
+  let P = 0;
+  for (let k = cs.length - 1; k >= 0; k--) P = P * u + cs[k];
+  let A = 1;
+  if (orbital.l === 1) A = dot3(orbital.e, X);
+  else if (orbital.l === 2) A = dot3(X, mulQ(orbital.Q, X));
+  else if (orbital.l === 3) {
+    const C = orbital.C;
+    const M = [0, 1, 2].map(i => [0, 1, 2].map(j => C[0][i][j] * X[0] + C[1][i][j] * X[1] + C[2][i][j] * X[2]));
+    A = dot3(X, mulQ(M, X));
+  }
+  return (P < 0) !== (A < 0) ? -1 : 1;
+}
+
+// Local RMS momentum (atomic units) at scaled point X of an orbital with
+// kappa = Z_eff / n: kappa sqrt(trace of T, negative part dropped). Mirrors
+// localMomentum() in the shader (momentum palette).
+export function localMomentum(orbital, X, kappa) {
+  const { lam } = jacobiEigen(localMomentumTensor(orbital, X));
+  const p = kappa * Math.sqrt(lam.reduce((a, l) => a + Math.max(l, 0), 0));
+  return p < 1e30 ? Math.max(p, 1e-30) : 1e30;
+}
+
 // Cyclic Jacobi eigen-decomposition of symmetric 3x3 A (row-major):
 // { lam: eigenvalues, V: row-major matrix whose columns are the
 // eigenvectors }. Mirrors jacobiEigen() in the shader.

@@ -2,7 +2,7 @@
 // 2D overlay drawn over the WebGL canvas (atomic-radius ring, axes, scale bar).
 
 import { ELEMENTS, ORBITALS, stepElement } from './elements.js';
-import { SUBSHELLS, orbitalsOf, orbitalColor } from './orbitals.js';
+import { SUBSHELLS, orbitalsOf, orbitalColor, L_HUE, SHELL_COLORS, PALETTE_COLORS, NEAREST_ONLY_SCHEMES } from './orbitals.js';
 import { atomsOf, occupiedAny, maxPeriod, collapsedRows, tableRow } from './selection.js';
 import { qToMat3, meanR2, hslCss } from './math.js';
 import { categoryClass, drawElementTile, renderTileCanvas, TILE_W } from './tile.js';
@@ -15,6 +15,24 @@ export const CAPACITY = { 0: 2, 1: 6, 2: 10, 3: 14 };
 export function orbitalCss(o, el, scheme = 'shape') {
   const { hue, chroma: c } = orbitalColor(o, el, scheme);
   return hslCss(hue, Math.round(90 * c), Math.round(55 + 25 * (1 - c)));
+}
+
+// Color key under the Palette menu: [css color, label] chips, or a ramp
+// for momentum. Shape and gray need none (the legend swatches show shape).
+const keyCss = ([hue, c]) => hslCss(hue, Math.round(90 * c), Math.round(55 + 25 * (1 - c)));
+function paletteKey(scheme) {
+  const chip = (css, label) => h('span', {}, h('span', { class: 'chip', style: `background:${css}` }), label);
+  const P = PALETTE_COLORS;
+  switch (scheme) {
+    case 'subshell': return ['s', 'p', 'd', 'f'].map((x, l) => chip(keyCss([L_HUE[l], 1]), x));
+    case 'shell': return Object.entries(SHELL_COLORS).map(([n, css]) => chip(css, `n=${n}`));
+    case 'valence': return [chip(keyCss(P.valence.core), 'core'), chip(keyCss(P.valence.valence), 'valence')];
+    case 'phase': return [chip(keyCss(P.phase.plus), 'ψ > 0'), chip(keyCss(P.phase.minus), 'ψ < 0')];
+    case 'momentum': return [h('span', {}, 'slow '), h('span', { class: 'ramp',
+      style: `background:linear-gradient(to right, ${keyCss(P.momentum.slow)}, hsl(0 0% 70%), ${keyCss(P.momentum.fast)})` }),
+      h('span', {}, ' fast')];
+    default: return [];
+  }
 }
 
 export const SHELL_LETTER = { 1: 'K', 2: 'L', 3: 'M', 4: 'N', 5: 'O', 6: 'P' };
@@ -178,6 +196,10 @@ export function syncControls(state) {
     : 'Mean detections per pixel per frame (if the whole atom were in view)';
   for (const r of document.querySelectorAll('input[name=colormode]')) r.checked = r.value === state.color;
   $('#scheme').value = state.scheme;
+  const key = paletteKey(state.scheme);
+  $('#palette-key').replaceChildren(...key);
+  $('#palette-key').hidden = key.length === 0;
+  $('#palette-note').hidden = !(state.color !== 'nearest' && NEAREST_ONLY_SCHEMES.has(state.scheme));
   // Momentum lines exist only in nearest color.
   const nearest = state.color === 'nearest';
   for (const r of document.querySelectorAll('input[name=streakmode]')) {

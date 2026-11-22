@@ -91,15 +91,20 @@
         <label><input type="radio" name="colormode" value="nearest"> Nearest</label>
         <label><input type="radio" name="colormode" value="blend"> Blend</label>
       </div>
-      <label class="row" title="What the colors show. Shape: each orbital's angular shape (p_x, p_y, p_z, …), inner shells paler. Gray: brightness only. Subshell: s red, p blue, d green, f violet, inner shells paler. Shell: the shell n, in the radial chart's colors.">
+      <label class="row" title="What the colors show. Shape: each orbital's angular shape (p_x, p_y, p_z, …), inner shells paler. Gray: brightness only. Subshell: s red, p blue, d green, f violet, inner shells paler. Shell: the shell n, in the radial chart's colors. Core / valence: inner electrons blue, valence amber. Nearest color only — Phase: the sign of the wavefunction at each detection (red +, blue −; which lobe is + is a convention, the pattern is not). Momentum: the local RMS momentum at each detection, slow blue to fast amber.">
         <span>Palette</span>
         <select id="scheme">
           <option value="shape">Shape</option>
           <option value="gray">Gray</option>
           <option value="subshell">Subshell (s p d f)</option>
           <option value="shell">Shell (n)</option>
+          <option value="valence">Core / valence</option>
+          <option value="phase">Phase (sign of ψ)</option>
+          <option value="momentum">Momentum (local)</option>
         </select>
       </label>
+      <div id="palette-key" class="palette-key" hidden></div>
+      <p id="palette-note" class="note" hidden>Phase and momentum color each detection, so they need Nearest color; Blend shows Shape.</p>
       <div class="row" id="streak-row" title="Nearest color only. Draws each detection as a short line along the electron's momentum at that point: its local momentum spread, from the Wigner function (T = −½ ∇∇ ln|ψ|). Local: a random momentum with that spread. Axis: the spread's main axis. Lines have no arrow (+p and −p are equally likely); lengths are relative to each orbital's typical momentum. (m)">
         <span>Momentum</span>
         <label><input type="radio" name="streakmode" value="off"> Off</label>

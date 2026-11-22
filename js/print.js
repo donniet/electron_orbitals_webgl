@@ -8,7 +8,7 @@
 //   z, z2               atom A and optional atom B (side by side)
 //   q=w,x,y,z | zoom    orientation quaternion and zoom (default: the app's)
 //   density, kmax, gamma, equalize=1, scale=fixed, cut=1, color=blend,
-//   streaks=local|axis|global, fog=strength, scheme=gray|subshell|shell,
+//   streaks=local|axis|global, fog=strength, scheme=gray|subshell|shell|valence|phase|momentum,
 //   overlay=0, radial=shell|subshell|compare   as in the app
 //   hide=i,j,...        orbital indices hidden (in both panes, like the app)
 // Print-page options (also in its toolbar):
@@ -16,7 +16,7 @@
 //   seed=n              fixed random seed (default: a fresh sample)
 
 import { elementByZ, ELEMENTS, ORBITALS } from './elements.js';
-import { SUBSHELLS, orbitalsOf, schemeParam, SCHEME_LABELS } from './orbitals.js';
+import { SUBSHELLS, orbitalsOf, schemeParam, SCHEME_LABELS, NEAREST_ONLY_SCHEMES } from './orbitals.js';
 import { loadTables } from './tables.js';
 import { createRenderer, baseHalf, viewGeometry, splitViews, streakParam } from './renderer.js';
 import { defaultOrientation } from './view.js';
@@ -161,7 +161,15 @@ function caption(W, H) {
     `gamma ${state.gamma.toFixed(2)}`,
     state.color === 'nearest' ? 'nearest color' : 'blended color',
   ];
-  if (state.scheme !== 'shape') parts.push(`palette: ${SCHEME_LABELS[state.scheme].toLowerCase()}`);
+  if (state.scheme !== 'shape') {
+    const caption = {
+      valence: 'core blue, valence amber',
+      phase: 'red ψ > 0, blue ψ < 0',
+      momentum: 'local RMS momentum, slow blue to fast amber',
+    }[state.scheme];
+    if (NEAREST_ONLY_SCHEMES.has(state.scheme) && state.color !== 'nearest') parts.push('palette: shape');
+    else parts.push(`palette: ${SCHEME_LABELS[state.scheme].toLowerCase()}` + (caption ? ` (${caption})` : ''));
+  }
   if (state.cut) parts.push('cut away: half behind the nucleus');
   if (state.fog > 0 && state.color === 'nearest') parts.push(`depth fog ${state.fog}`);
   if (state.streaks && state.color === 'nearest') {
