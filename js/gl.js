@@ -80,6 +80,33 @@ export function createTableTexture(gl, data, n,
   return tex;
 }
 
+// Render target backed by a w x h RGBA32UI texture (NEAREST, as integer
+// textures require), for packed per-pixel data read back with texelFetch.
+// Returns { fbo, tex }; resize with resizeUintTarget. Both bind the texture
+// to the active texture unit (choose it first) and leave the FBO bound.
+export function createUintTarget(gl, w, h) {
+  const tex = gl.createTexture();
+  const fbo = gl.createFramebuffer();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const target = { fbo, tex, w: 0, h: 0 };
+  resizeUintTarget(gl, target, w, h);
+  return target;
+}
+
+export function resizeUintTarget(gl, target, w, h) {
+  if (target.w === w && target.h === h) return;
+  gl.bindTexture(gl.TEXTURE_2D, target.tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32UI, w, h, 0, gl.RGBA_INTEGER, gl.UNSIGNED_INT, null);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, target.tex, 0);
+  target.w = w;
+  target.h = h;
+}
+
 // Full-screen triangle uses gl_VertexID; WebGL2 still wants a bound VAO.
 export function createEmptyVAO(gl) {
   const vao = gl.createVertexArray();

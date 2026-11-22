@@ -15,12 +15,16 @@ used by the cut-away view, and the radial factor itself
     q2(u) = R(u)^2 / u^(2l)
 
 with each row's extent (the radius holding all but RADIAL_TAIL of the
-electron), used to march along rays for the "nearest detection" coloring.
+electron), used to march along rays for the "nearest detection" coloring,
+and the inverse CDF of each row's radial *momentum* density (scaled momentum
+q = p n / Z at cumulative fractions F = (i + 0.5) / N; see the momentum-space
+section of tools/orbitals.py), used to draw momentum streaks.
 Output:
 
     data/orbital_tables.bin         float32 little-endian, [row][i][RGBA]
     data/orbital_tables_odd.bin     same layout, odd moments
     data/orbital_tables_radial.bin  float32 little-endian, [row][i], q2
+    data/orbital_tables_momentum.bin  float32 little-endian, [row][i], q(F_i)
     data/orbital_tables.json        metadata (N, uMax, rows (+ extent), channels, odd, radial)
 
 Texels hold (I0, I2, I4, I6) and (J1, J3, J5, 0). tools/orbitals.py has the
@@ -28,7 +32,11 @@ math that turns moments into column densities for s, p, d and f orbitals.
 
 `--verify` runs a Monte Carlo simulation: electron positions are sampled
 from |psi|^2, projected onto an image plane and histogrammed; the histograms
-are compared to the tables.
+are compared to the tables, and momentum samples drawn from the inverse
+CDF are checked against <q^2> = 1 and the analytic density.
+
+`--momentum-only` (re)writes just the momentum table and its metadata entry,
+leaving the other tables untouched.
 """
 import argparse
 import array
@@ -56,6 +64,9 @@ ODD_NAME = "orbital_tables_odd.bin"
 ODD_PATH = os.path.join(ROOT, "data", ODD_NAME)
 RADIAL_PATH = os.path.join(ROOT, "data", "orbital_tables_radial.bin")
 RADIAL_TAIL = 1e-7    # probability beyond a row's extent
+MOMENTUM_NAME = "orbital_tables_momentum.bin"
+MOMENTUM_PATH = os.path.join(ROOT, "data", MOMENTUM_NAME)
+MOMENTUM_STEPS = 200000   # trapezoid steps in theta (q = tan theta) for the CDF
 
 
 def moments_at(u):
@@ -156,12 +167,129 @@ def write_moment_tables(tables, odd, bin_path=BIN_PATH, meta_path=META_PATH, odd
         "radial": {"file": os.path.basename(radial_path), "channels": ["q2"],
                    "format": "float32 little-endian, layout [row][i], R^2 / u^(2l)",
                    "tail": RADIAL_TAIL},
+        "momentum": MOMENTUM_META,
         "rows": [{"name": nm, "n": nn, "l": ll, "extent": round(radial_extent(r), 3)}
                  for nm, (nn, ll), r in zip(orb.ROW_NAMES, orb.RADIAL, orb.RADIALS)],
     }
+    _write_meta(meta, meta_path)
+    write_momentum_table(n)
+
+
+def _write_meta(meta, meta_path=META_PATH):
     with open(meta_path, "w") as fh:
         json.dump(meta, fh, indent=2)
         fh.write("\n")
+
+
+# ================================================================ momentum table
+MOMENTUM_META = {
+    "file": MOMENTUM_NAME, "channels": ["q"],
+    "format": "float32 little-endian, layout [row][i], scaled momentum q = p n / Z "
+              "at cumulative fraction F = (i + 0.5) / N of the radial momentum density",
+}
+
+
+def momentum_quantiles(n_q, l_q, n=M_N, steps=MOMENTUM_STEPS):
+    """q at F = (i + 0.5) / n of the radial momentum density of (n_q, l_q):
+    trapezoid CDF in theta (q = tan theta), inverted with linear interpolation."""
+    h = 0.5 * math.pi / steps
+    cdf = [0.0]
+    prev = orb.momentum_density_theta(n_q, l_q, 0.0)
+    for j in range(1, steps + 1):
+        cur = orb.momentum_density_theta(n_q, l_q, j * h)
+        cdf.append(cdf[-1] + 0.5 * (prev + cur) * h)
+        prev = cur
+    total = cdf[-1]
+    out, j = [], 0
+    for i in range(n):
+        target = (i + 0.5) / n * total
+        while cdf[j + 1] < target:
+            j += 1
+        f = (target - cdf[j]) / (cdf[j + 1] - cdf[j])
+        out.append(math.tan((j + f) * h))
+    return out
+
+
+def write_momentum_table(n=M_N, path=MOMENTUM_PATH):
+    arr = array.array("f", [q for nn, ll in orb.RADIAL for q in momentum_quantiles(nn, ll, n)])
+    if sys.byteorder == "big":
+        arr.byteswap()
+    with open(path, "wb") as fh:
+        arr.tofile(fh)
+
+
+def write_momentum_only(meta_path=META_PATH):
+    """Write the momentum table and its metadata entry; other tables untouched.
+    The entry goes where write_moment_tables puts it (before "rows")."""
+    with open(meta_path) as fh:
+        meta = json.load(fh)
+    meta.pop("momentum", None)
+    rows = meta.pop("rows")
+    meta["momentum"] = MOMENTUM_META
+    meta["rows"] = rows
+    _write_meta(meta, meta_path)
+    write_momentum_table(meta["N"])
+
+
+def load_momentum_table(path=MOMENTUM_PATH, meta_path=META_PATH):
+    """q[row][i] as written by write_momentum_table."""
+    return load_radial_tables(path, meta_path)
+
+
+def momentum_sample(qtab, row, F):
+    """Scaled momentum for uniform F in [0, 1) (lerp, clamped at the ends).
+    Mirrors momentumQ() in the shader."""
+    t = qtab[row]
+    n = len(t)
+    x = min(max(F * n - 0.5, 0.0), n - 1.0)
+    i = min(int(x), n - 2)
+    f = x - i
+    return t[i] * (1.0 - f) + t[i + 1] * f
+
+
+def momentum_mean_q(n_q, l_q):
+    """Analytic <q> of (n_q, l_q) by quadrature in theta (q = tan theta)."""
+    f = lambda t: orb.momentum_density_theta(n_q, l_q, t)
+    g = lambda t: math.tan(t) * f(t) if t < 0.5 * math.pi else 0.0
+    return _simpson(g, 0.0, 0.5 * math.pi, 4000) / _simpson(f, 0.0, 0.5 * math.pi, 4000)
+
+
+def momentum_verify(qtab, n_samples=200000, seed=7, nbins=24, q_hi=4.0, verbose=True):
+    """Sample q from the table with uniform F; return the worst relative error
+    of the sample mean <q> against quadrature, and the worst |histogram -
+    analytic bin mass|. (<q^2> = 1 holds exactly for the density, but q^2 has
+    a heavy tail (s: density ~ q^-6), so its sample mean is a poor check.)"""
+    rng = random.Random(seed)
+    worst_mean, worst_bin = 0.0, 0.0
+    for row, (nn, ll) in enumerate(orb.RADIAL):
+        counts, m1 = [0] * nbins, 0.0
+        for _ in range(n_samples):
+            q = momentum_sample(qtab, row, rng.random())
+            m1 += q
+            k = int(q / q_hi * nbins)
+            if k < nbins:
+                counts[k] += 1
+        m1 /= n_samples
+        exact = momentum_mean_q(nn, ll)
+        norm = _simpson(lambda t: orb.momentum_density_theta(nn, ll, t), 0.0, 0.5 * math.pi, 4000)
+        bw = q_hi / nbins
+        err = max(abs(counts[k] / n_samples -
+                      _simpson(lambda q: orb.momentum_density_q(nn, ll, q), k * bw, (k + 1) * bw, 200) / norm)
+                  for k in range(nbins))
+        rel = abs(m1 / exact - 1.0)
+        worst_mean, worst_bin = max(worst_mean, rel), max(worst_bin, err)
+        if verbose:
+            print(f"  momentum {orb.ROW_NAMES[row]:3s} <q> = {m1:.4f} (exact {exact:.4f})  "
+                  f"max |hist - density| = {err:.4f}")
+    return worst_mean, worst_bin
+
+
+def _simpson(f, a, b, n):
+    h = (b - a) / n
+    s = f(a) + f(b)
+    for i in range(1, n):
+        s += (4 if i & 1 else 2) * f(a + i * h)
+    return s * h / 3
 
 
 def load_moment_tables(bin_path=BIN_PATH, meta_path=META_PATH):
@@ -360,13 +488,25 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--verify", action="store_true",
                     help="run Monte Carlo cross-check after generating")
+    ap.add_argument("--momentum-only", action="store_true",
+                    help="write only the momentum table (and its metadata entry)")
     args = ap.parse_args(argv)
+
+    if args.momentum_only:
+        write_momentum_only()
+        print(f"Wrote {MOMENTUM_PATH} and the momentum entry of {META_PATH}")
+        if args.verify:
+            m2, hist = momentum_verify(load_momentum_table())
+            ok = m2 < 0.01 and hist < 0.005
+            print("PASS" if ok else "FAIL", f"(worst <q> rel. error {m2:.4f}, worst bin {hist:.4f})")
+            return 0 if ok else 1
+        return 0
 
     print(f"Building moment tables: {len(orb.RADIALS)} radial functions x {M_N} samples, "
           f"u in [0, {M_U_MAX}] ...")
     tables, odd = build_moment_tables()
     write_moment_tables(tables, odd)
-    print(f"Wrote {BIN_PATH}, {ODD_PATH}, {RADIAL_PATH} and {META_PATH}")
+    print(f"Wrote {BIN_PATH}, {ODD_PATH}, {RADIAL_PATH}, {MOMENTUM_PATH} and {META_PATH}")
     for name, row, orow in zip(orb.ROW_NAMES, tables, odd):
         print(f"  {name}: I0(0)={row[0][0]:.6g}  I2(0)={row[0][1]:.6g}  "
               f"I4(0)={row[0][2]:.6g}  I6(0)={row[0][3]:.6g}  "
@@ -375,8 +515,10 @@ def main(argv=None):
     if args.verify:
         print("Monte Carlo verification ...")
         worst = monte_carlo_verify_moments(tables, odd=odd)
-        ok = worst < 0.01
-        print("PASS" if ok else "FAIL", f"(worst bin error {worst:.4f})")
+        m2, hist = momentum_verify(load_momentum_table())
+        ok = worst < 0.01 and m2 < 0.01 and hist < 0.005
+        print("PASS" if ok else "FAIL", f"(worst bin error {worst:.4f}, "
+              f"momentum: worst <q> rel. error {m2:.4f}, worst bin {hist:.4f})")
         return 0 if ok else 1
     return 0
 

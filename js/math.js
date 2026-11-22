@@ -198,6 +198,76 @@ export function nearestDepthRef(tables, orbital, P, d, k, massRef, v, cut = fals
   return -H;
 }
 
+// ------------------------------------------------------------ momentum (streaks)
+// A streak is one sample of the orbital's momentum distribution |phi(p)|^2
+// (phi the Fourier transform of psi): direction with density A(p)^2 (psi's
+// own angular part), scaled magnitude q = p / kappa from the inverse-CDF
+// table. Independent of the detection's position; see the shader's
+// "Momentum (streaks)" section, which these mirror.
+export const MOMENTUM_TRIES = 48;
+export const STREAM_MOMENTUM_DIR = 2 << 20;
+export const STREAM_MOMENTUM_Q = 3 << 20;
+
+const AMAX_CACHE = new WeakMap();
+
+// Bound on A(x)^2 over unit vectors x: dense Fibonacci sphere + 2% margin
+// (exact maxima are 3/4pi for p, max |eigenvalue|^2 of Q for d). The shader
+// gets it as c2.w; s needs none (uniform directions).
+export function angularMax2(orbital) {
+  if (orbital.l === 0) return 1 / (4 * Math.PI);
+  if (AMAX_CACHE.has(orbital)) return AMAX_CACHE.get(orbital);
+  const n = 20000, zero = [0, 0, 0];
+  let best = 0;
+  for (let i = 0; i < n; i++) {
+    const z = 1 - (2 * (i + 0.5)) / n, r = Math.sqrt(Math.max(0, 1 - z * z));
+    const ph = i * 2.399963229728653;
+    const a = angularPoly(orbital, [r * Math.cos(ph), r * Math.sin(ph), z], zero)[0];
+    best = Math.max(best, a * a);
+  }
+  AMAX_CACHE.set(orbital, best * 1.02);
+  return best * 1.02;
+}
+
+const u01 = v => (v >>> 8) / 16777216;
+
+// Unit momentum direction for pixel key [x, y, seed]. Mirrors momentumDirection().
+export function momentumDirection(orbital, key, amax2 = angularMax2(orbital)) {
+  let dir = [0, 0, 1];
+  for (let j = 0; j < MOMENTUM_TRIES; j++) {
+    const r = pcg4d(key[0] >>> 0, key[1] >>> 0, key[2] >>> 0, (STREAM_MOMENTUM_DIR + j) >>> 0);
+    const z = 2 * u01(r[0]) - 1, s = Math.sqrt(Math.max(0, 1 - z * z));
+    const ph = 2 * Math.PI * u01(r[1]);
+    dir = [s * Math.cos(ph), s * Math.sin(ph), z];
+    if (orbital.l === 0) return dir;
+    const a = angularPoly(orbital, dir, [0, 0, 0])[0];
+    if (u01(r[2]) * amax2 <= a * a) return dir;
+  }
+  return dir;
+}
+
+// Scaled momentum q of table row `row` for uniform F. Mirrors momentumQ().
+export function momentumQ(tables, row, F) {
+  const { N, momentum } = tables;
+  const x = Math.min(Math.max(F * N - 0.5, 0), N - 1);
+  const i = Math.min(Math.floor(x), N - 2);
+  const f = x - i;
+  return momentum[row * N + i] * (1 - f) + momentum[row * N + i + 1] * f;
+}
+
+// Streak half-vector (render-buffer pixels) for pixel key [x, y, seed]:
+// q dir rotated by atomToView (row-major, = transpose of the shader's uRot),
+// projected on the screen, times len, clamped to rMax. Mirrors streakHalf().
+export function streakHalf(tables, orbital, key, atomToView, len, rMax) {
+  const dir = momentumDirection(orbital, key);
+  const q = momentumQ(tables, orbital.row,
+    u01(pcg4d(key[0] >>> 0, key[1] >>> 0, key[2] >>> 0, STREAM_MOMENTUM_Q >>> 0)[0]));
+  const v = mat3MulVec(atomToView, dir);
+  let h = [len * q * v[0], len * q * v[1]];
+  const l = Math.hypot(h[0], h[1]);
+  if (l > rMax) h = [h[0] * rMax / l, h[1] * rMax / l];
+  return h;
+}
+
 function cform(C, a, b, c) {
   let s = 0;
   for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) for (let k = 0; k < 3; k++) {

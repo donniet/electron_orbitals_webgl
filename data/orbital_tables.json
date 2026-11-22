@@ -26,6 +26,13 @@
     "format": "float32 little-endian, layout [row][i], R^2 / u^(2l)",
     "tail": 1e-07
   },
+  "momentum": {
+    "file": "orbital_tables_momentum.bin",
+    "channels": [
+      "q"
+    ],
+    "format": "float32 little-endian, layout [row][i], scaled momentum q = p n / Z at cumulative fraction F = (i + 0.5) / N of the radial momentum density"
+  },
   "rows": [
     {
       "name": "1s",

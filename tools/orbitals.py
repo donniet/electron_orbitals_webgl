@@ -127,6 +127,44 @@ class Radial:
 RADIALS = [Radial(n, l) for n, l in RADIAL]
 
 
+# ------------------------------------------------------------ momentum space
+# The momentum wavefunction is the 3-D Fourier transform of psi. For a
+# hydrogen-like orbital it keeps the angular part (real Y_lm, phase (-i)^l)
+# and has the radial part (Podolsky & Pauling 1929; Bethe & Salpeter 1957)
+#
+#     F_nl(p) ~ (n p / Z)^l / ((n p / Z)^2 + 1)^(l+2) C^(l+1)_(n-l-1)(x),
+#     x = ((n p / Z)^2 - 1) / ((n p / Z)^2 + 1),
+#
+# C the Gegenbauer polynomial. In the scaled momentum q = p n / Z the radial
+# momentum density q^2 F^2 depends only on (n, l), as the position density
+# does in u = Z r / n; p = kappa q with kappa = Z / n. <q^2> = 1 (virial).
+# With q = tan(theta), theta in [0, pi/2), x = -cos(2 theta) and
+#     q^2 F^2 dq ~ sin^(2l+2) cos^(2l+4) C(x)^2 dtheta,
+# smooth and bounded on a finite interval (used to build the inverse CDF).
+def gegenbauer(k, alpha, x):
+    """C_k^alpha(x) by the three-term recurrence."""
+    if k == 0:
+        return 1.0
+    prev, cur = 1.0, 2.0 * alpha * x
+    for j in range(1, k):
+        prev, cur = cur, (2.0 * x * (j + alpha) * cur - (j + 2.0 * alpha - 1.0) * prev) / (j + 1)
+    return cur
+
+
+def momentum_density_q(n, l, q):
+    """Unnormalised radial momentum density q^2 F_nl(q)^2 (reference units)."""
+    q2 = q * q
+    c = gegenbauer(n - l - 1, l + 1, (q2 - 1.0) / (q2 + 1.0))
+    return q2 ** (l + 1) / (q2 + 1.0) ** (2 * l + 4) * c * c
+
+
+def momentum_density_theta(n, l, th):
+    """The same density per unit theta, q = tan(theta)."""
+    s, c = math.sin(th), math.cos(th)
+    g = gegenbauer(n - l - 1, l + 1, -math.cos(2.0 * th))
+    return s ** (2 * l + 2) * c ** (2 * l + 4) * g * g
+
+
 def row_of(n, l):
     return RADIAL.index((n, l))
 

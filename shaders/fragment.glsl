@@ -10,6 +10,10 @@
 //
 // Host-provided defines (injected by js/gl.js createProgram after #version):
 //   NUM_ORBITALS  size of the Orbitals uniform block (js/orbitals.js)
+//   STREAKS       (optional, prototype) nearest-color detections also get a
+//                 momentum streak: instead of a color this pass writes a
+//                 packed texel (color, streak half-vector, depth) that
+//                 shaders/streak.glsl draws as short lines.
 #ifndef NUM_ORBITALS
 #error NUM_ORBITALS must be defined by the host (createProgram defines)
 #endif
@@ -19,6 +23,21 @@
 #define NEAREST_STEPS 48
 
 #define TWO_PI (6.28318530718)
+
+#ifdef STREAKS
+// Longest streak half-length (render-buffer pixels); must match STREAK_R in
+// shaders/streak.glsl (both come from js/shaders.js).
+#ifndef STREAK_R
+#error STREAK_R must be defined by the host
+#endif
+// Rejection-sampling attempts for a momentum direction (acceptance >= 1/7
+// for f: P(no accept) = (6/7)^48 < 1e-3; then the last proposal is used).
+#define MOMENTUM_TRIES 48
+// Random streams of the momentum draws (disjoint from the Poisson streams
+// < 2^20 and the nearest-depth streams 2^20 + slot).
+#define STREAM_MOMENTUM_DIR (2u << 20)
+#define STREAM_MOMENTUM_Q   (3u << 20)
+#endif
 
 precision highp float;
 precision highp int;
@@ -52,6 +71,16 @@ uniform int   uMode;         // 0 = dark background, 1 = white background
 uniform int   uColorMode;   // 0 = blend every orbital's detections;
                              // 1 = only the orbital with the nearest detection
 
+#ifdef STREAKS
+// Momentum streaks: inverse CDF of each row's radial momentum density
+// (scaled momentum q = p n / Z at F = (i + 0.5) / N, uTableN x rows, R32F),
+// the view -> atom rotation (as in the vertex shader) and the streak
+// half-length per unit of projected q (render-buffer pixels).
+uniform sampler2D uMomentumTables;
+uniform mat3  uRot;
+uniform float uStreakLen;
+#endif
+
 // Occupied, visible orbitals, packed into the first uCount slots of a
 // uniform block (std140) in canonical order.
 struct Orbital {
@@ -61,6 +90,7 @@ struct Orbital {
   vec4 c0;     // angular coefficients (see js/orbitals.js angularCoefs):
   vec4 c1;     //  p: e.xyz; d: q00 q01 q02 q11 | q12 q22;
   vec4 c2;     //  f: c000 c001 c002 c011 | c012 c022 c111 c112 | c122 c222
+               // c2.w: max of A^2 over unit vectors (momentum direction bound)
 };
 layout(std140) uniform Orbitals {
   Orbital uOrbitals[NUM_ORBITALS];
@@ -71,7 +101,14 @@ uniform int uCount;
 in vec3 vP;                  // closest point of the ray to the nucleus
 flat in vec3 vD;             // unit direction
 
+#ifdef STREAKS
+// Packed detection (see main): x = RGB8 + has-detection bit 24, y = streak
+// half-vector (pixels, half floats), z = depth bits, w = the nearest
+// orbital's slot (for tests).
+out uvec4 outData;
+#else
 out vec4 outColor;
+#endif
 
 // ==========================================================================
 // Forward declarations (definitions follow main)
@@ -83,6 +120,11 @@ float columnRef(Orbital o, vec3 P, vec3 d);
 float radialAt(int row, float u);
 float rayDensityS(int row, vec4 A, float u2, float H, float s);
 float nearestDepthRef(Orbital o, vec3 P, vec3 d, int k, float massRef, float v, float tStop);
+#ifdef STREAKS
+vec3  momentumDirection(Orbital o, uvec3 key);
+float momentumQ(int row, float F);
+vec2  streakHalf(Orbital o, uvec3 key);
+#endif
 // 2. Rendering helpers
 vec3  hsv2rgb(vec3 c);
 // 3. Numerical methods
@@ -109,6 +151,7 @@ void main() {
   float nearT = NONE;
   float nearSat = 0.0;
   vec2 nearChroma = vec2(0.0);
+  int nearSlot = -1;
 
   for (int i = 0; i < NUM_ORBITALS; i++) {
     if (i >= uCount) break;
@@ -138,6 +181,7 @@ void main() {
         nearT = tRef / kappa;
         nearSat = sat;
         nearChroma = c;
+        nearSlot = i;
       }
     }
   }
@@ -165,7 +209,21 @@ void main() {
     // space is white, and overlaps mix toward black.
     rgb = vec3(1.0) - hsv2rgb(vec3(fract(hue + 0.5), purity, amount));
   }
+#ifdef STREAKS
+  // The nearest detection's orbital also gives a momentum streak, drawn by
+  // shaders/streak.glsl. Empty pixels keep their color, without a streak.
+  vec2 h = vec2(0.0);
+  uint has = 0u;
+  if (uColorMode == 1 && nearSlot >= 0) {
+    h = streakHalf(uOrbitals[nearSlot], key);
+    has = 1u;
+  }
+  uvec3 c8 = uvec3(round(clamp(rgb, 0.0, 1.0) * 255.0));
+  outData = uvec4(c8.r | (c8.g << 8) | (c8.b << 16) | (has << 24),
+                  packHalf2x16(h), floatBitsToUint(nearT), uint(max(nearSlot, 0)));
+#else
   outColor = vec4(rgb, 1.0);
+#endif
 }
 
 // ==========================================================================
@@ -310,6 +368,58 @@ float nearestDepthRef(Orbital o, vec3 P, vec3 d, int k, float massRef, float v, 
   }
   return -H;    // short of the target by the quadrature error: the back end
 }
+
+#ifdef STREAKS
+// --- Momentum (streaks) ---------------------------------------------------
+// A detected position has no definite momentum, and the probability current
+// of these real orbitals is zero, so there is no local velocity to draw.
+// What is defined is the orbital's momentum distribution |phi(p)|^2, phi the
+// Fourier transform of psi: it keeps psi's angular part A^2 and has its own
+// radial part (tools/orbitals.py). A streak is one sample of that momentum,
+// independent of where the detection lies: "what a momentum measurement of
+// this electron would give instead". |phi(p)|^2 = |phi(-p)|^2, so streaks
+// are undirected segments centred on the detection.
+
+// Unit momentum direction with density A(p)^2: rejection from the uniform
+// sphere against the bound c2.w (s: uniform). Mirrored in js/math.js.
+vec3 momentumDirection(Orbital o, uvec3 key) {
+  bool isS = o.kind.x < 0.5;
+  vec3 dir = vec3(0.0, 0.0, 1.0);
+  for (int j = 0; j < MOMENTUM_TRIES; j++) {
+    uvec4 r = pcg4d(uvec4(key, STREAM_MOMENTUM_DIR + uint(j)));
+    float z = 2.0 * u01(r.x) - 1.0;
+    float s = sqrt(max(0.0, 1.0 - z * z));
+    float ph = TWO_PI * u01(r.y);
+    dir = vec3(s * cos(ph), s * sin(ph), z);
+    if (isS) return dir;
+    float a = angularPoly(o, dir, vec3(0.0)).x;       // A at the unit vector
+    if (u01(r.z) * o.c2.w <= a * a) return dir;
+  }
+  return dir;
+}
+
+// Scaled momentum q for uniform F from the inverse-CDF table (lerp,
+// clamped at the ends). Mirrored in js/math.js.
+float momentumQ(int row, float F) {
+  float x = clamp(F * float(uTableN) - 0.5, 0.0, float(uTableN - 1));
+  int i = min(int(x), uTableN - 2);
+  float f = x - float(i);
+  return mix(texelFetch(uMomentumTables, ivec2(i, row), 0).r,
+             texelFetch(uMomentumTables, ivec2(i + 1, row), 0).r, f);
+}
+
+// Streak half-vector on screen (render-buffer pixels): the momentum sample
+// q * direction (relative units: q = p / kappa, so every shell shows its own
+// pattern), rotated to view space, projected onto the screen, scaled by
+// uStreakLen and clamped to STREAK_R.
+vec2 streakHalf(Orbital o, uvec3 key) {
+  vec3 dir = momentumDirection(o, key);
+  float q = momentumQ(int(o.kind.y + 0.5), u01(pcg4d(uvec4(key, STREAM_MOMENTUM_Q)).x));
+  vec2 h = uStreakLen * q * (transpose(uRot) * dir).xy;   // atom -> view
+  float len = length(h);
+  return len > float(STREAK_R) ? h * (float(STREAK_R) / len) : h;
+}
+#endif
 
 // ==========================================================================
 // 2. Rendering helpers

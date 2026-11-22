@@ -9,8 +9,10 @@ import {
   qAxisAngle, qMul, qToMat3, mat3MulVec, viewToAtom, mat3ToGL,
   meanR2, horizon, momentLookup, radialDensity, columnDensity, makeRng, poisson, pcg, hsvToRgb,
   columnRef, angularPoly, radialLookup, nearestDepthRef, NO_DEPTH,
+  angularMax2, momentumDirection, momentumQ, streakHalf,
 } from '../js/math.js';
-import { createRenderer, viewGeometry, orbitalPeak, orbitalGains, MAX_VIEW_RADIUS, shapePeak, splitViews } from '../js/renderer.js';
+import { STREAK_R } from '../js/shaders.js';
+import { createRenderer, viewGeometry, orbitalPeak, orbitalGains, MAX_VIEW_RADIUS, shapePeak, splitViews, STREAK_LEN } from '../js/renderer.js';
 import { loadTables } from '../js/tables.js';
 import { atomsOf, paneViews, subshellUnion, occupiedAny, valenceUnion, defaultExpandedShells, collapsedRows, tableRow } from '../js/selection.js';
 import { createScaleAnimator } from '../js/view.js';
@@ -474,12 +476,14 @@ function renderFrame(z, opts = {}) {
     seed: opts.seed ?? 1, density: opts.density ?? 0.3,
     equalize: opts.equalize ?? false, kMax: opts.kMax ?? 4, gamma: opts.gamma ?? 0.5,
     mode: opts.mode || 'dark', visible: opts.visible || ORBITALS.map(() => true), fixedScale: opts.fixedScale ?? false,
-    cut: opts.cut ?? false, color: opts.color || 'blend',
+    cut: opts.cut ?? false, color: opts.color || 'blend', streaks: opts.streaks ?? false,
   };
-  r.render(state);
+  r.render(state, opts.k ?? 1);
   const px = new Uint8Array(256 * 256 * 4);
   r.gl.readPixels(0, 0, 256, 256, r.gl.RGBA, r.gl.UNSIGNED_BYTE, px);
+  const det = opts.streaks ? r.readDetections() : null;
   r.gl.getExtension('WEBGL_lose_context')?.loseContext();
+  if (opts.withDetections) return { px, det, state };
   return px;
 }
 
@@ -953,6 +957,114 @@ await testAsync('print page: a single atom gets a centred box the size of one pa
   near(ir.left, box.left, 0.5, 'box left'); near(ir.right, box.right, 0.5, 'box right');
   near(ir.top, box.top, 0.5, 'box top'); near(ir.bottom, box.bottom, 0.5, 'box bottom');
   f.remove();
+});
+
+// ------------------------------------------------------------ momentum streaks
+test('momentum: directions follow A^2 (2pz <cos^2> = 3/5, 3dz2 11/21, s 1/3)', () => {
+  const cases = [['1s', 1 / 3], ['2pz', 3 / 5], ['3dz2', 11 / 21]];
+  for (const [id, want] of cases) {
+    const o = ORBITALS[P(id)];
+    let c2 = 0;
+    const n = 20000;
+    for (let i = 0; i < n; i++) c2 += momentumDirection(o, [i, 7, 3])[2] ** 2;
+    near(c2 / n, want, 0.012, id);
+  }
+});
+
+test('momentum: A^2 bound covers the maximum; q table gives <q> = 8/(3 pi) for 1s', () => {
+  // exact maxima: p 3/4pi, 3dz2 5/4pi (at the pole); the bound is above, within ~2%
+  for (const [id, max] of [['2px', 3 / (4 * Math.PI)], ['3dz2', 5 / (4 * Math.PI)]]) {
+    const b = angularMax2(ORBITALS[P(id)]);
+    assert(b >= max && b <= 1.021 * max, `${id} bound ${b} vs max ${max}`);
+  }
+  for (const o of ORBITALS.filter(o => o.l > 0)) {
+    for (let i = 0; i < 500; i++) {
+      const d = [Math.sin(i), Math.cos(3 * i), Math.sin(7 * i + 1)];
+      const n = Math.hypot(...d);
+      const a = angularPoly(o, d.map(c => c / n), [0, 0, 0])[0];
+      assert(a * a <= angularMax2(o), `${o.id} bound`);
+    }
+  }
+  let m = 0;
+  const n = 100000;
+  for (let i = 0; i < n; i++) m += momentumQ(TABLES, 0, (i + 0.5) / n);
+  near(m / n, 8 / (3 * Math.PI), 0.003, '1s <q>');
+});
+
+// The detection pass of a streak frame for oxygen, rotated, nearest color.
+const STREAK_Q = qAxisAngle([0.3, 1, 0.2], 0.9);
+function streakFrame(k = 1, streaks = true) {
+  return renderFrame(8, { color: 'nearest', streaks, seed: 5, q: STREAK_Q, density: 0.5, k, withDetections: true });
+}
+
+test('GPU streaks: detections match the plain nearest render and the CPU momentum mirror', () => {
+  const { det, state } = streakFrame();
+  const plain = streakFrame(1, false).px;
+  const el = state.element;
+  const slots = ORBITALS.filter((o, i) => el.occupancy[i] > 0);
+  const atomToView = qToMat3(STREAK_Q);
+  assert(det && det.w === 256 && det.h === 256, 'detection texture');
+  let n = 0, colorBad = 0, hasBad = 0, hBad = 0, worst = 0;
+  for (let y = 0; y < 256; y++) for (let x = 0; x < 256; x++) {
+    const i = 4 * (y * 256 + x), t = det.data.subarray(i, i + 4);
+    const rgb = [t[0] & 255, (t[0] >>> 8) & 255, (t[0] >>> 16) & 255];
+    if (rgb.some((v, c) => Math.abs(v - plain[i + c]) > 1)) colorBad++;
+    const has = (t[0] >>> 24) === 1;
+    if (has !== (plain[i] + plain[i + 1] + plain[i + 2] > 0)) hasBad++;
+    if (!has) continue;
+    n++;
+    const h = new Float32Array(2);
+    // unpack two half floats
+    const half = b => {
+      const e = (b >>> 10) & 31, m = b & 1023, sgn = b & 32768 ? -1 : 1;
+      return sgn * (e === 0 ? m / 1024 * 2 ** -14 : (1 + m / 1024) * 2 ** (e - 15));
+    };
+    h[0] = half(t[1] & 65535); h[1] = half(t[1] >>> 16);
+    const want = streakHalf(TABLES, slots[t[3]], [x, y, state.seed], atomToView, STREAK_LEN, STREAK_R);
+    const err = Math.hypot(h[0] - want[0], h[1] - want[1]);
+    worst = Math.max(worst, err);
+    if (err > 0.01 + 2e-3 * Math.hypot(...want)) hBad++;
+  }
+  assert(n > 2000, `only ${n} detections`);
+  assert(colorBad === 0, `${colorBad} pixels differ in color from the plain render`);
+  assert(hasBad === 0, `${hasBad} pixels disagree on having a detection`);
+  assert(hBad <= n * 0.002, `${hBad}/${n} streaks differ from the CPU mirror (worst ${worst.toFixed(3)} px)`);
+});
+
+test('GPU streaks: the streak pass is the nearest covering segment (CPU gather), k = 1 and 2', () => {
+  for (const k of [1, 2]) {
+    const { px, det } = streakFrame(k);
+    const W = det.w, H = det.h, R = STREAK_R;
+    const f32 = new Float32Array(det.data.buffer);
+    const half = b => {
+      const e = (b >>> 10) & 31, m = b & 1023, sgn = b & 32768 ? -1 : 1;
+      return sgn * (e === 0 ? m / 1024 * 2 ** -14 : (1 + m / 1024) * 2 ** (e - 15));
+    };
+    let bad = 0, streakPx = 0;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      let best = -3e38, c = det.data[4 * (y * W + x)];
+      for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        const j = 4 * (ny * W + nx);
+        if ((det.data[j] >>> 24) !== 1) continue;
+        const hx = half(det.data[j + 1] & 65535), hy = half(det.data[j + 1] >>> 16);
+        const ox = -dx, oy = -dy, hh = hx * hx + hy * hy;
+        const s = hh > 0 ? Math.min(1, Math.max(-1, (ox * hx + oy * hy) / hh)) : 0;
+        const ex = ox - s * hx, ey = oy - s * hy;
+        if (ex * ex + ey * ey >= 0.25) continue;
+        const depth = f32[j + 2];
+        if (depth > best) { best = depth; c = det.data[j]; }
+      }
+      if (c !== det.data[4 * (y * W + x)]) streakPx++;
+      // canvas pixel (blit by k): bottom-left device pixel of the block
+      const i = 4 * ((y * k) * 256 + x * k);
+      if (y * k >= 256 || x * k >= 256) continue;
+      if ([c & 255, (c >>> 8) & 255, (c >>> 16) & 255].some((v, ch) => v !== px[i + ch])) bad++;
+    }
+    assert(streakPx > 500, `k=${k}: streaks changed only ${streakPx} pixels`);
+    assert(bad <= W * H * 0.001, `k=${k}: ${bad} pixels differ from the CPU gather`);
+  }
 });
 
 // ------------------------------------------------------------ report

@@ -3,6 +3,8 @@
 //   data/orbital_tables.bin       float32 little-endian, [row][i][RGBA]
 //   data/orbital_tables_odd.bin   same layout, odd half-line moments
 //   data/orbital_tables_radial.bin  float32, [row][i], q2 = R^2 / u^(2l)
+//   data/orbital_tables_momentum.bin  float32, [row][i], scaled momentum
+//                                    q = p n / Z at cumulative F = (i + 0.5) / N
 // Texels hold (I0, I2, I4, I6) and (J1, J3, J5, 0) of one radial function
 // at u = i * uMax / (N - 1); rows[r].extent is the radius (reference units)
 // beyond which row r's density is negligible.
@@ -24,21 +26,21 @@ export async function loadTables(base = DEFAULT_BASE) {
       '(python3 -m http.server 8000).');
   }
   const meta = await metaRes.json();
-  if (!meta.odd || !meta.radial) {
-    throw new Error('orbital_tables.json lacks the odd or radial tables: it is out of date ' +
+  if (!meta.odd || !meta.radial || !meta.momentum) {
+    throw new Error('orbital_tables.json lacks the odd, radial or momentum tables: it is out of date ' +
       'or cached. Hard-reload the page, or run python3 tools/gen_tables.py.');
   }
   const expected = meta.rows.length * meta.N * 4;
   const data = toFloats(await binRes.arrayBuffer(), 'orbital_tables.bin', expected);
 
-  const [odd, radial] = await Promise.all([
-    [meta.odd.file, expected], [meta.radial.file, expected / 4],
+  const [odd, radial, momentum] = await Promise.all([
+    [meta.odd.file, expected], [meta.radial.file, expected / 4], [meta.momentum.file, expected / 4],
   ].map(async ([file, n]) => {
     const res = await fetch(new URL(file, base), FETCH_OPTS);
     if (!res.ok) throw new Error(`Could not load ${file} (${res.status}).`);
     return toFloats(await res.arrayBuffer(), file, n);
   }));
-  return { N: meta.N, uMax: meta.uMax, rows: meta.rows, data, odd, radial };
+  return { N: meta.N, uMax: meta.uMax, rows: meta.rows, data, odd, radial, momentum };
 }
 
 // Little-endian float32 file -> Float32Array of the expected length.

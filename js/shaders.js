@@ -9,6 +9,11 @@ export { NUM_ORBITALS };
 
 export const SHADER_DEFINES = { NUM_ORBITALS };
 
+// Momentum streaks (prototype): longest streak half-length in render-buffer
+// pixels. The streak pass reads (2 STREAK_R + 1)^2 texels per pixel.
+export const STREAK_R = 4;
+export const STREAK_DEFINES = { ...SHADER_DEFINES, STREAKS: 1, STREAK_R };
+
 async function loadText(rel) {
   const url = new URL(rel, import.meta.url);
   const res = await fetch(url);
@@ -16,7 +21,8 @@ async function loadText(rel) {
   return res.text();
 }
 
-export const [VERT, FRAG] = await Promise.all([
+export const [VERT, FRAG, STREAK_FRAG] = await Promise.all([
   loadText('../shaders/vertex.glsl'),
   loadText('../shaders/fragment.glsl'),
+  loadText('../shaders/streak.glsl'),
 ]);

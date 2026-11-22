@@ -49,6 +49,7 @@ const state = {
   fixedScale: params.get('scale') === 'fixed',
   cut: params.get('cut') === '1',  // cut-away: only the cloud behind the nucleus
   color: params.get('color') === 'blend' ? 'blend' : 'nearest',
+  streaks: params.get('streaks') === '1',  // prototype: momentum streaks (nearest color only)
   radialMode: 'auto',            // 'auto' | 'shell' | 'subshell'
   spin: defaultSpin(),           // { axis, rate } in view space, or null
   kMax: +params.get('kmax') || 4,

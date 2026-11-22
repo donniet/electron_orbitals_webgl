@@ -1,10 +1,15 @@
 // Draws one frame of the probabilistic orbital image.
 
-import { createContext, createProgram, createTableTexture, createEmptyVAO } from './gl.js';
-import { VERT, FRAG, SHADER_DEFINES } from './shaders.js';
+import { createContext, createProgram, createTableTexture, createEmptyVAO, createUintTarget,
+  resizeUintTarget } from './gl.js';
+import { VERT, FRAG, STREAK_FRAG, SHADER_DEFINES, STREAK_DEFINES, STREAK_R } from './shaders.js';
 import { ORBITALS, NUM_ORBITALS, angularCoefs, orbitalChroma } from './orbitals.js';
 import { ELEMENTS } from './elements.js';
-import { viewToAtom, mat3ToGL, momentLookup, columnRef } from './math.js';
+import { viewToAtom, mat3ToGL, momentLookup, columnRef, angularMax2 } from './math.js';
+
+// Momentum streaks (prototype): streak half-length per unit of projected
+// scaled momentum q = p / kappa (render-buffer pixels); <q^2> = 1.
+export const STREAK_LEN = 2;
 
 // ------------------------------------------------------------ peaks
 // Peak column density per electron of each orbital *shape* in reference
@@ -143,39 +148,53 @@ export function splitViews(W, H, k = 1, n = 1) {
 // ------------------------------------------------------------ renderer
 export function createRenderer(canvas, tables) {
   const gl = createContext(canvas);
-  const { prog, uniforms: u } = createProgram(gl, VERT, FRAG, { defines: SHADER_DEFINES });
+  // The physics pass: `main` writes colors; `det` (streaks, compiled with
+  // STREAKS) writes packed detections that the `streak` pass draws as lines.
+  const main = createProgram(gl, VERT, FRAG, { defines: SHADER_DEFINES });
+  const det = createProgram(gl, VERT, FRAG, { defines: STREAK_DEFINES });
+  const streak = createProgram(gl, VERT, STREAK_FRAG, { defines: { STREAK_R } });
   const tex = createTableTexture(gl, tables.data, tables.N, tables.rows.length);
   const oddTex = createTableTexture(gl, tables.odd, tables.N, tables.rows.length);
   const radialTex = createTableTexture(gl, tables.radial, tables.N, tables.rows.length, { channels: 1 });
+  const momentumTex = createTableTexture(gl, tables.momentum, tables.N, tables.rows.length, { channels: 1 });
   createEmptyVAO(gl);
 
-  gl.useProgram(prog);
+  // Texture units: 0-3 tables, 4 the detection texture of the streak pass.
+  [tex, oddTex, radialTex, momentumTex].forEach((t, i) => {
+    gl.activeTexture(gl.TEXTURE0 + i);
+    gl.bindTexture(gl.TEXTURE_2D, t);
+  });
   gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.uniform1i(u.uTables, 0);
-  gl.activeTexture(gl.TEXTURE1);
-  gl.bindTexture(gl.TEXTURE_2D, oddTex);
-  gl.uniform1i(u.uOddTables, 1);
-  gl.activeTexture(gl.TEXTURE2);
-  gl.bindTexture(gl.TEXTURE_2D, radialTex);
-  gl.uniform1i(u.uRadialTables, 2);
-  gl.activeTexture(gl.TEXTURE0);
-  gl.uniform1i(u.uTableN, tables.N);
-  gl.uniform1f(u.uTableUMax, tables.uMax);
 
   // Per-orbital data lives in a std140 uniform block: 5 vec4 per orbital
   // (orb, kind, c0, c1, c2). Static shape data is prepared once; each frame
   // only the occupied, visible orbitals are packed (in canonical order) into
   // the first uCount slots.
   const STRIDE = 20;                                   // floats per Orbital
-  const blockIndex = gl.getUniformBlockIndex(prog, 'Orbitals');
-  gl.uniformBlockBinding(prog, blockIndex, 0);
+  for (const { prog, uniforms: u } of [main, det]) {
+    gl.useProgram(prog);
+    gl.uniform1i(u.uTables, 0);
+    gl.uniform1i(u.uOddTables, 1);
+    gl.uniform1i(u.uRadialTables, 2);
+    if (u.uMomentumTables) gl.uniform1i(u.uMomentumTables, 3);
+    gl.uniform1i(u.uTableN, tables.N);
+    gl.uniform1f(u.uTableUMax, tables.uMax);
+    gl.uniformBlockBinding(prog, gl.getUniformBlockIndex(prog, 'Orbitals'), 0);
+  }
+  gl.useProgram(streak.prog);
+  gl.uniform1i(streak.uniforms.uDetections, 4);
   const ubo = gl.createBuffer();
   gl.bindBuffer(gl.UNIFORM_BUFFER, ubo);
   gl.bufferData(gl.UNIFORM_BUFFER, STRIDE * 4 * NUM_ORBITALS, gl.DYNAMIC_DRAW);
   gl.bindBufferBase(gl.UNIFORM_BUFFER, 0, ubo);
   const blockData = new Float32Array(STRIDE * NUM_ORBITALS);
-  const shapeData = ORBITALS.map(o => [o.l, o.row, ...angularCoefs(o)]);   // 14 floats
+  // 14 floats: l, row, 12 angular coefficients; the last (c2.w, unused by
+  // the coefficients) holds the bound on A^2 for momentum directions.
+  const shapeData = ORBITALS.map(o => {
+    const coefs = angularCoefs(o);
+    coefs[11] = angularMax2(o);
+    return [o.l, o.row, ...coefs];
+  });
 
   /**
    * state: {
@@ -193,7 +212,9 @@ export function createRenderer(canvas, tables) {
    *   mode      - 'dark' | 'white',
    *   color    - 'blend' (every orbital's detections mixed) | 'nearest'
    *               (only the orbital with the detection nearest the viewer),
-   *   visible   - boolean per orbital
+   *   visible   - boolean per orbital,
+   *   streaks   - (prototype) in 'nearest' color, draw each detection as a
+   *               short line along a momentum sampled from its orbital
    * }
    */
   // Low-resolution target for render scale k > 1. The result is copied to
@@ -213,6 +234,9 @@ export function createRenderer(canvas, tables) {
   }
 
   const ALL_VISIBLE = ORBITALS.map(() => true);
+
+  // Packed detections of the streak path (1/k buffer size).
+  let detTarget = null;
 
   // Pack the occupied, visible orbitals of `el` into the uniform block.
   function uploadOrbitals(el, visible, gains) {
@@ -248,7 +272,20 @@ export function createRenderer(canvas, tables) {
   function renderViews(state, k, views) {
     const W = canvas.width, H = canvas.height;
     const BW = Math.ceil(W / k), BH = Math.ceil(H / k);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, k > 1 ? lowResTarget(BW, BH) : null);
+    const colorTarget = k > 1 ? lowResTarget(BW, BH) : null;
+    const streaks = !!state.streaks && state.color === 'nearest';
+    const { prog, uniforms: u } = streaks ? det : main;
+    gl.useProgram(prog);
+    if (streaks) {
+      gl.activeTexture(gl.TEXTURE4);                       // its unit (see above)
+      if (!detTarget) detTarget = createUintTarget(gl, BW, BH);
+      resizeUintTarget(gl, detTarget, BW, BH);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, detTarget.fbo);
+      gl.uniform1f(u.uStreakLen, STREAK_LEN);
+    } else {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, colorTarget);
+    }
 
     gl.uniformMatrix3fv(u.uRot, false, mat3ToGL(viewToAtom(state.orientation)));
     gl.uniform1ui(u.uSeed, state.seed >>> 0);
@@ -279,6 +316,19 @@ export function createRenderer(canvas, tables) {
       return geo;
     });
 
+    if (streaks) {
+      // Second pass: the detections as streaks, pane by pane (no streak
+      // reaches across a pane boundary).
+      gl.bindFramebuffer(gl.FRAMEBUFFER, colorTarget);
+      gl.useProgram(streak.prog);
+      for (const { rect } of views) {
+        const x = rect.x / k, y = rect.y / k, bw = Math.ceil(rect.w / k), bh = Math.ceil(rect.h / k);
+        gl.viewport(x, y, bw, bh);
+        gl.uniform4i(streak.uniforms.uPane, x, y, bw, bh);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+      }
+    }
+
     if (k > 1) {
       gl.bindFramebuffer(gl.READ_FRAMEBUFFER, fbo);
       gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
@@ -294,5 +344,16 @@ export function createRenderer(canvas, tables) {
     return renderViews(state, k, [{ element: state.element, visible: state.visible, rect }])[0];
   }
 
-  return { gl, render, renderViews };
+  // Tests: the packed detections of the last streak frame (RGBA32UI texels,
+  // see fragment.glsl), or null.
+  function readDetections() {
+    if (!detTarget) return null;
+    const out = new Uint32Array(detTarget.w * detTarget.h * 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, detTarget.fbo);
+    gl.readPixels(0, 0, detTarget.w, detTarget.h, gl.RGBA_INTEGER, gl.UNSIGNED_INT, out);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return { data: out, w: detTarget.w, h: detTarget.h };
+  }
+
+  return { gl, render, renderViews, readDetections };
 }

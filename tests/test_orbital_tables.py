@@ -335,5 +335,58 @@ class TestMonteCarlo(unittest.TestCase):
             self.assertLess(err, 0.012, f"{lab} cut={cut}")
 
 
+def _sph_bessel(l, x):
+    """Spherical Bessel j_l, l <= 3 (series near 0)."""
+    if x < 1e-3:
+        return x ** l / (1, 3, 15, 105)[l]
+    s, c = math.sin(x), math.cos(x)
+    return (s / x, s / x ** 2 - c / x, (3 / x ** 3 - 1 / x) * s - 3 * c / x ** 2,
+            (15 / x ** 4 - 6 / x ** 2) * s - (15 / x ** 3 - 1 / x) * c)[l]
+
+
+class TestMomentum(unittest.TestCase):
+    """Momentum-space radial density (tools/orbitals.py) and its inverse-CDF
+    table data/orbital_tables_momentum.bin."""
+    QTAB = gt.load_momentum_table()
+
+    def test_virial_mean_q2_is_one(self):
+        # <p^2> = Z^2 / n^2 (virial: <T> = Z^2 / 2n^2), i.e. <q^2> = 1
+        half = 0.5 * math.pi
+        for nn, ll in orb.RADIAL:
+            f = lambda t: orb.momentum_density_theta(nn, ll, t)
+            m2 = simpson(lambda t: math.tan(t) ** 2 * f(t) if t < half else 0.0, 0, half) / simpson(f, 0, half)
+            self.assertAlmostEqual(m2, 1.0, places=6, msg=f"{nn},{ll}")
+
+    def test_fourier_transform_of_position_radial(self):
+        # q^2 F(q)^2 must be proportional to q^2 (int R(r) j_l(q r) r^2 dr)^2
+        for nn, ll in [(1, 0), (3, 0), (2, 1), (4, 1), (3, 2), (4, 3), (6, 0)]:
+            rad = orb.RADIALS[orb.row_of(nn, ll)]
+            ratios = []
+            for q in (0.3, 0.7, 1.3, 2.2):
+                F = simpson(lambda r: rad.R(r) * _sph_bessel(ll, q * r) * r * r, 0, 60 + 10 * nn, 6000)
+                ratios.append(q * q * F * F / orb.momentum_density_q(nn, ll, q))
+            self.assertLess(max(ratios) / min(ratios) - 1, 1e-4, f"{nn},{ll}")
+
+    def test_table_inverts_the_cdf(self):
+        # analytic CDF at the tabulated q_i is F_i = (i + 0.5) / N
+        n = META["N"]
+        self.assertEqual(META["momentum"]["file"], gt.MOMENTUM_NAME)
+        self.assertEqual(len(self.QTAB), len(orb.RADIAL))
+        for row, (nn, ll) in enumerate(orb.RADIAL):
+            qs = self.QTAB[row]
+            self.assertEqual(len(qs), n)
+            self.assertTrue(all(a < b for a, b in zip(qs, qs[1:])), f"row {row} not increasing")
+            f = lambda t: orb.momentum_density_theta(nn, ll, t)
+            total = simpson(f, 0, 0.5 * math.pi)
+            for i in (0, 100, 511, 900, n - 1):
+                cdf = simpson(f, 0, math.atan(qs[i]), 2000) / total
+                self.assertAlmostEqual(cdf, (i + 0.5) / n, delta=2e-5, msg=f"row {row} i {i}")
+
+    def test_sampled_mean_and_histogram(self):
+        worst_mean, worst_bin = gt.momentum_verify(self.QTAB, n_samples=40000, verbose=False)
+        self.assertLess(worst_mean, 0.02)
+        self.assertLess(worst_bin, 0.006)
+
+
 if __name__ == "__main__":
     unittest.main()
