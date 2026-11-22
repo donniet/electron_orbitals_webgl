@@ -15,6 +15,7 @@
 //   ?spin=0       start without the slow default rotation
 //   ?res=full     noise canvas resolution: auto (default) | full | half
 //   ?kmax=4       counts for full brightness
+//   ?scheme=gray  color scheme: shape (default) | gray | subshell | shell
 //   ?fog=0.6      depth fog on, at this strength (nearest color)
 //   ?gamma=0.5    tone gamma
 //   ?record=1     open the video recording controls
@@ -22,6 +23,7 @@
 import { elementByZ, ELEMENTS, ORBITALS } from './elements.js';
 import { qAxisAngle, qMul, qNormalize } from './math.js';
 import { createRenderer, baseHalf, viewGeometry, splitViews, streakParam } from './renderer.js';
+import { schemeParam } from './orbitals.js';
 import { createScaleAnimator, prefersReducedMotion, defaultOrientation } from './view.js';
 import { loadTables } from './tables.js';
 import { attachControls } from './controls.js';
@@ -52,6 +54,7 @@ const state = {
   color: params.get('color') === 'blend' ? 'blend' : 'nearest',
   // momentum streaks (nearest color only): false | 'local' | 'axis' | 'global' (URL only)
   streaks: streakParam(params.get('streaks')),
+  scheme: schemeParam(params.get('scheme')),   // color scheme: what hue encodes
   radialMode: 'auto',            // 'auto' | 'shell' | 'subshell'
   spin: defaultSpin(),           // { axis, rate } in view space, or null
   kMax: +params.get('kmax') || 4,
@@ -184,6 +187,7 @@ const app = {
   setFixedScale(b) { state.fixedScale = b; syncControls(state); dirty = true; },
   setCut(b) { state.cut = b; syncControls(state); dirty = true; },
   setColor(m) { state.color = m; syncControls(state); dirty = true; },
+  setScheme(s) { state.scheme = s; syncControls(state); updateElement(app); dirty = true; },
   setStreaks(m) { state.streaks = m; syncControls(state); dirty = true; },
   setFog(on) { state.fogOn = on; syncControls(state); dirty = true; },
   setFogStrength(s) { state.fogStrength = s; syncControls(state); dirty = true; },
@@ -262,6 +266,7 @@ function printParams(s) {
   if (s.fixedScale) p.set('scale', 'fixed');
   if (s.cut) p.set('cut', '1');
   if (s.color !== 'nearest') p.set('color', s.color);
+  if (s.scheme !== 'shape') p.set('scheme', s.scheme);
   if (s.streaks) p.set('streaks', s.streaks);
   if (s.fogOn) p.set('fog', s.fogStrength);
   if (!s.overlay) p.set('overlay', '0');

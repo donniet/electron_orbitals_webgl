@@ -3,7 +3,7 @@
 import { createContext, createProgram, createTableTexture, createEmptyVAO, createUintTarget,
   resizeUintTarget } from './gl.js';
 import { VERT, FRAG, STREAK_FRAG, SHADER_DEFINES, STREAK_DEFINES, STREAK_R } from './shaders.js';
-import { ORBITALS, NUM_ORBITALS, angularCoefs, orbitalChroma, radialPolyRef } from './orbitals.js';
+import { ORBITALS, NUM_ORBITALS, angularCoefs, orbitalColor, radialPolyRef } from './orbitals.js';
 import { ELEMENTS } from './elements.js';
 import { viewToAtom, mat3ToGL, momentLookup, columnRef, angularMax2 } from './math.js';
 
@@ -229,6 +229,7 @@ export function createRenderer(canvas, tables) {
    *   color    - 'blend' (every orbital's detections mixed) | 'nearest'
    *               (only the orbital with the detection nearest the viewer),
    *   visible   - boolean per orbital,
+   *   scheme    - color scheme (orbitals.js COLOR_SCHEMES; default 'shape'),
    *   fog       - depth fog strength in [0, 1] ('nearest' color; 0 = off):
    *               brightness exp(-(3 fog d)^2), d the distance behind the front
    *               of the atom (its radius, or the cut plane) as a fraction
@@ -262,19 +263,20 @@ export function createRenderer(canvas, tables) {
   let detTarget = null;
 
   // Pack the occupied, visible orbitals of `el` into the uniform block.
-  function uploadOrbitals(el, visible, gains) {
+  function uploadOrbitals(el, visible, gains, scheme) {
     let count = 0;
     ORBITALS.forEach((o, i) => {
       if (!(el.occupancy[i] > 0) || !visible[i]) return;
       const b = STRIDE * count++;
       const [l, row, ...coefs] = shapeData[i];
+      const { hue, chroma } = orbitalColor(o, el, scheme);
       blockData[b] = el.occupancy[i];
       blockData[b + 1] = el.zeff[i] / o.n;
-      blockData[b + 2] = o.hue / 360;
+      blockData[b + 2] = hue / 360;
       blockData[b + 3] = gains[i];
       blockData[b + 4] = l;
       blockData[b + 5] = row;
-      blockData[b + 6] = orbitalChroma(o, el);
+      blockData[b + 6] = chroma;
       blockData[b + 7] = tables.rows[row].extent;
       blockData.set(coefs, b + 8);
     });
@@ -327,7 +329,7 @@ export function createRenderer(canvas, tables) {
         state.bohrPerPixel ?? null);
       const viewArea = 4 * geo.halfExtent[0] * geo.halfExtent[1];
       const gains = orbitalGains(tables, el, state.density, viewArea, state.equalize);
-      const count = uploadOrbitals(el, visible, gains);
+      const count = uploadOrbitals(el, visible, gains, state.scheme);
 
       // The pane's 1/k buffer region covers bw*k x bh*k device pixels
       // (>= rect); the vertex shader scales its NDC so geometry matches

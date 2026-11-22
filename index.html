@@ -91,6 +91,15 @@
         <label><input type="radio" name="colormode" value="nearest"> Nearest</label>
         <label><input type="radio" name="colormode" value="blend"> Blend</label>
       </div>
+      <label class="row" title="What the colors show. Shape: each orbital's angular shape (p_x, p_y, p_z, …), inner shells paler. Gray: brightness only. Subshell: s red, p blue, d green, f violet, inner shells paler. Shell: the shell n, in the radial chart's colors.">
+        <span>Palette</span>
+        <select id="scheme">
+          <option value="shape">Shape</option>
+          <option value="gray">Gray</option>
+          <option value="subshell">Subshell (s p d f)</option>
+          <option value="shell">Shell (n)</option>
+        </select>
+      </label>
       <div class="row" id="streak-row" title="Nearest color only. Draws each detection as a short line along the electron's momentum at that point: its local momentum spread, from the Wigner function (T = −½ ∇∇ ln|ψ|). Local: a random momentum with that spread. Axis: the spread's main axis. Lines have no arrow (+p and −p are equally likely); lengths are relative to each orbital's typical momentum. (m)">
         <span>Momentum</span>
         <label><input type="radio" name="streakmode" value="off"> Off</label>

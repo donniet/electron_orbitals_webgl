@@ -2,7 +2,7 @@
 // 2D overlay drawn over the WebGL canvas (atomic-radius ring, axes, scale bar).
 
 import { ELEMENTS, ORBITALS, stepElement } from './elements.js';
-import { SUBSHELLS, orbitalsOf, orbitalChroma } from './orbitals.js';
+import { SUBSHELLS, orbitalsOf, orbitalColor } from './orbitals.js';
 import { atomsOf, occupiedAny, maxPeriod, collapsedRows, tableRow } from './selection.js';
 import { qToMat3, meanR2, hslCss } from './math.js';
 import { categoryClass, drawElementTile, renderTileCanvas, TILE_W } from './tile.js';
@@ -10,11 +10,11 @@ import { categoryClass, drawElementTile, renderTileCanvas, TILE_W } from './tile
 const BOHR_PM = 52.9177;
 export const CAPACITY = { 0: 2, 1: 6, 2: 10, 3: 14 };
 
-// Swatch color for an orbital: paler for low-chroma (outer-shell) orbitals,
-// approximating how they read in the render.
-export function orbitalCss(o, el) {
-  const c = orbitalChroma(o, el);
-  return hslCss(o.hue, Math.round(90 * c), Math.round(55 + 25 * (1 - c)));
+// Swatch color for an orbital in a color scheme: paler for low-chroma
+// (inner-shell) orbitals, approximating how they read in the render.
+export function orbitalCss(o, el, scheme = 'shape') {
+  const { hue, chroma: c } = orbitalColor(o, el, scheme);
+  return hslCss(hue, Math.round(90 * c), Math.round(55 + 25 * (1 - c)));
 }
 
 export const SHELL_LETTER = { 1: 'K', 2: 'L', 3: 'M', 4: 'N', 5: 'O', 6: 'P' };
@@ -90,6 +90,7 @@ export function buildUI(app) {
   for (const r of document.querySelectorAll('input[name=colormode]')) {
     r.addEventListener('change', e => { if (e.target.checked) app.setColor(e.target.value); });
   }
+  $('#scheme').addEventListener('change', e => app.setScheme(e.target.value));
   for (const r of document.querySelectorAll('input[name=streakmode]')) {
     r.addEventListener('change', () => r.checked && app.setStreaks(r.value === 'off' ? false : r.value));
   }
@@ -176,6 +177,7 @@ export function syncControls(state) {
     ? 'Peak expected detections per pixel = exposure x 20'
     : 'Mean detections per pixel per frame (if the whole atom were in view)';
   for (const r of document.querySelectorAll('input[name=colormode]')) r.checked = r.value === state.color;
+  $('#scheme').value = state.scheme;
   // Momentum lines exist only in nearest color.
   const nearest = state.color === 'nearest';
   for (const r of document.querySelectorAll('input[name=streakmode]')) {
@@ -383,7 +385,7 @@ function renderLegend(app, atoms) {
       rows.push(h('tr', { class: 'sub' + (any ? '' : ' empty') },
         h('td', {}, cb),
         h('td', { class: 'swatches' }, ...idx.map(i =>
-          h('span', { class: 'swatch', style: `background:${orbitalCss(ORBITALS[i], owner(i))}` }))),
+          h('span', { class: 'swatch', style: `background:${orbitalCss(ORBITALS[i], owner(i), app.state.scheme)}` }))),
         h('td', { class: 'orb-label' }, caret, sh.id), ...numbers));
 
       if (open) {
@@ -393,7 +395,7 @@ function renderLegend(app, atoms) {
           const ocb = checkbox('Show / hide this orbital', [i], on => app.setVisible(i, on));
           rows.push(h('tr', { class: 'child' + (occupiedAny(atoms, i) ? '' : ' empty') },
             h('td', {}, ocb),
-            h('td', { class: 'swatches' }, h('span', { class: 'swatch', style: `background:${orbitalCss(o, owner(i))}` })),
+            h('td', { class: 'swatches' }, h('span', { class: 'swatch', style: `background:${orbitalCss(o, owner(i), app.state.scheme)}` })),
             h('td', { class: 'orb-label', html: o.label }),
             ...(cmp
               ? [h('td', { class: 'pips num' }, pips(A)), h('td', { class: 'pips num' }, pips(B)), h('td', {}), h('td', {})]

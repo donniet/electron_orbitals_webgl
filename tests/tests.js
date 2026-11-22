@@ -4,7 +4,7 @@
 // "PASS n/n" or "FAIL k/n" so headless runs can read it.
 
 import { ELEMENTS, ORBITALS, aufbau, hundFill, stepElement } from '../js/elements.js';
-import { SUBSHELLS, orbitalIndex, orbitalsOf, isValence, angularCoefs, orbitalChroma } from '../js/orbitals.js';
+import { SUBSHELLS, orbitalIndex, orbitalsOf, isValence, angularCoefs, orbitalChroma, orbitalColor, COLOR_SCHEMES, SHELL_COLORS, L_HUE } from '../js/orbitals.js';
 import {
   qAxisAngle, qMul, qToMat3, mat3MulVec, viewToAtom, mat3ToGL,
   meanR2, horizon, momentLookup, radialDensity, columnDensity, makeRng, poisson, pcg, hsvToRgb,
@@ -478,6 +478,7 @@ function renderFrame(z, opts = {}) {
     equalize: opts.equalize ?? false, kMax: opts.kMax ?? 4, gamma: opts.gamma ?? 0.5,
     mode: opts.mode || 'dark', visible: opts.visible || ORBITALS.map(() => true), fixedScale: opts.fixedScale ?? false,
     cut: opts.cut ?? false, color: opts.color || 'blend', streaks: opts.streaks ?? false, fog: opts.fog ?? 0,
+    scheme: opts.scheme,
   };
   r.render(state, opts.k ?? 1);
   const px = new Uint8Array(256 * 256 * 4);
@@ -1231,6 +1232,81 @@ await testAsync('app: Depth fog follows the URL, needs nearest color, f toggles'
   key('f');
   assert(q('#fog').checked && q('input[name=colormode][value=nearest]').checked, 'f: on, back to nearest');
   f.remove();
+});
+
+test('color schemes: per-orbital hue and chroma', () => {
+  const fe = ELEMENTS[25];
+  for (const o of ORBITALS) {
+    const shape = orbitalColor(o, fe);
+    assert(shape.hue === o.hue && shape.chroma === orbitalChroma(o, fe), `${o.id}: shape is the default`);
+    assert(orbitalColor(o, fe, 'gray').chroma === 0, `${o.id}: gray has no chroma`);
+    const sub = orbitalColor(o, fe, 'subshell');
+    assert(sub.hue === L_HUE[o.l], `${o.id}: subshell hue by l`);
+    const sh = orbitalColor(o, fe, 'shell');
+    const [r, g, b] = [1, 3, 5].map(i => parseInt(SHELL_COLORS[o.n].slice(i, i + 2), 16));
+    assert(sh.chroma === 1, `${o.id}: shell full chroma`);
+    // The chart color's hue: its strongest channel stays strongest.
+    const max = Math.max(r, g, b);
+    const pure = hsv2rgbRef(sh.hue / 360, 1, 1).map(v => Math.round(v * 255));
+    assert(pure[[r, g, b].indexOf(max)] === 255, `${o.id}: shell hue of ${SHELL_COLORS[o.n]}`);
+  }
+  // Subshell: inner shells paler (s included); valence vivid.
+  assert(orbitalColor(ORBITALS[orbitalIndex('1s')], fe, 'subshell').chroma < 1, '1s pale in Fe');
+  assert(orbitalColor(ORBITALS[orbitalIndex('4s')], fe, 'subshell').chroma === 1, '4s vivid in Fe');
+});
+function hsv2rgbRef(h, s, v) {
+  const f = n => { const k = (n + h * 6) % 6; return v - v * s * Math.max(0, Math.min(k, 4 - k, 1)); };
+  return [f(5), f(3), f(1)];
+}
+
+test('GPU color schemes: same brightness per pixel, gray is neutral, white the dual', () => {
+  for (const color of ['blend', 'nearest']) {
+    for (const mode of ['dark', 'white']) {
+      const opts = { color, mode, seed: 5, density: 0.5 };
+      const frames = Object.fromEntries(COLOR_SCHEMES.map(sc => [sc, renderFrame(26, { ...opts, scheme: sc })]));
+      const def = renderFrame(26, opts);
+      assert(def.every((v, i) => v === frames.shape[i]), `${color}/${mode}: default is shape`);
+      let lit = 0, badV = 0, badGray = 0;
+      // Dark: HSV value = max channel; white: 1 - value = min channel.
+      const val = (px, i) => mode === 'dark' ? Math.max(px[i], px[i + 1], px[i + 2]) : Math.min(px[i], px[i + 1], px[i + 2]);
+      for (let i = 0; i < def.length; i += 4) {
+        const v = val(frames.shape, i);
+        if (v !== (mode === 'dark' ? 0 : 255)) lit++;
+        for (const sc of COLOR_SCHEMES) if (Math.abs(val(frames[sc], i) - v) > 1) badV++;
+        const g = frames.gray;
+        if (Math.abs(g[i] - g[i + 1]) > 1 || Math.abs(g[i] - g[i + 2]) > 1) badGray++;
+      }
+      assert(lit > 3000, `${color}/${mode}: only ${lit} lit pixels`);
+      assert(badV === 0, `${color}/${mode}: ${badV} pixels change brightness with the scheme`);
+      assert(badGray === 0, `${color}/${mode}: ${badGray} gray pixels with color`);
+    }
+  }
+});
+
+await testAsync('app: Palette menu follows the URL, recolors legend swatches, carried to print', async () => {
+  const f = document.createElement('iframe');
+  f.style.cssText = 'position:absolute;left:-10000px;width:1400px;height:1000px';
+  f.src = '../index.html?z=26&paused=1&spin=0&scheme=shell';
+  document.body.append(f);
+  const q = sel => f.contentDocument?.querySelector(sel);
+  const t0 = performance.now();
+  while (!(q('#scheme')?.value === 'shell' && q('#legend .swatch'))) {
+    if (performance.now() - t0 > 60000) throw new Error('app did not load');
+    await new Promise(res => setTimeout(res, 50));
+  }
+  const swatches = () => [...f.contentDocument.querySelectorAll('#legend .swatch')].map(s => s.style.background);
+  const shell = swatches();
+  const sel = q('#scheme');
+  sel.value = 'gray';
+  sel.dispatchEvent(new Event('change'));
+  const gray = swatches();
+  assert(gray.length === shell.length && gray.join() !== shell.join(), 'swatches recolored');
+  assert(gray.every(c => { const m = c.match(/\d+/g); return m && m[0] === m[1] && m[1] === m[2]; }), `gray swatches: ${gray[0]}`);
+  f.remove();
+  const p = await loadFrame('../print.html?z=26&seed=7&paper=letter&grain=4&scheme=subshell');
+  const cap = p.contentDocument.getElementById('caption').textContent;
+  assert(cap.includes('palette: subshell (s p d f)'), `caption: ${cap}`);
+  p.remove();
 });
 
 // ------------------------------------------------------------ report

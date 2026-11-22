@@ -8,7 +8,7 @@
 //   z, z2               atom A and optional atom B (side by side)
 //   q=w,x,y,z | zoom    orientation quaternion and zoom (default: the app's)
 //   density, kmax, gamma, equalize=1, scale=fixed, cut=1, color=blend,
-//   streaks=local|axis|global, fog=strength,
+//   streaks=local|axis|global, fog=strength, scheme=gray|subshell|shell,
 //   overlay=0, radial=shell|subshell|compare   as in the app
 //   hide=i,j,...        orbital indices hidden (in both panes, like the app)
 // Print-page options (also in its toolbar):
@@ -16,7 +16,7 @@
 //   seed=n              fixed random seed (default: a fresh sample)
 
 import { elementByZ, ELEMENTS, ORBITALS } from './elements.js';
-import { SUBSHELLS, orbitalsOf } from './orbitals.js';
+import { SUBSHELLS, orbitalsOf, schemeParam, SCHEME_LABELS } from './orbitals.js';
 import { loadTables } from './tables.js';
 import { createRenderer, baseHalf, viewGeometry, splitViews, streakParam } from './renderer.js';
 import { defaultOrientation } from './view.js';
@@ -79,6 +79,7 @@ const state = {
   cut: params.get('cut') === '1',
   color: params.get('color') === 'blend' ? 'blend' : 'nearest',
   streaks: streakParam(params.get('streaks')),
+  scheme: schemeParam(params.get('scheme')),
   fog: Math.min(1, Math.max(0, num('fog', 0))),
   overlay: params.get('overlay') !== '0',
   radialMode: ['shell', 'subshell', 'compare'].includes(params.get('radial')) ? params.get('radial') : 'auto',
@@ -160,6 +161,7 @@ function caption(W, H) {
     `gamma ${state.gamma.toFixed(2)}`,
     state.color === 'nearest' ? 'nearest color' : 'blended color',
   ];
+  if (state.scheme !== 'shape') parts.push(`palette: ${SCHEME_LABELS[state.scheme].toLowerCase()}`);
   if (state.cut) parts.push('cut away: half behind the nucleus');
   if (state.fog > 0 && state.color === 'nearest') parts.push(`depth fog ${state.fog}`);
   if (state.streaks && state.color === 'nearest') {
@@ -270,7 +272,7 @@ function renderLegend() {
         : [occ[0] ? `${occ[0]}/${CAPACITY[sh.l]}` : '—', occ[0] ? A.zeffBySubshell[sh.id].toFixed(3) : '', rmsPm(A, sh)];
       rows.push(h('tr', { class: 'sub' + (allHidden ? ' hidden' : '') },
         h('td', { class: 'swatches' }, ...idx.map(i =>
-          h('span', { class: 'swatch', style: `background:${orbitalCss(ORBITALS[i], owner(i))}` }))),
+          h('span', { class: 'swatch', style: `background:${orbitalCss(ORBITALS[i], owner(i), state.scheme)}` }))),
         label, ...numbers.map(v => h('td', { class: 'num' }, v))));
     }
   }

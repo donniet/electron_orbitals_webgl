@@ -197,8 +197,54 @@ export function radialDensity(n, l, z, r) {
 // shells palest. s orbitals stay vivid (concentric s shells are told apart
 // by their hues), so H-Ne look as before.
 export function orbitalChroma(orbital, element) {
-  if (orbital.l === 0 || isValence(orbital, element)) return 1;
+  return orbital.l === 0 ? 1 : depthChroma(orbital, element);
+}
+
+function depthChroma(orbital, element) {
+  if (isValence(orbital, element)) return 1;
   return element.period - orbital.n <= 1 ? 0.6 : 0.35;
+}
+
+// Color schemes: what an orbital's hue encodes. The renderer composites
+// (hue, chroma) per orbital as always, so every scheme works in blend and
+// nearest color and keeps the white theme the exact dual of the dark one.
+//  shape     hue = angular shape (S/P/D/F_HUE above), chroma by depth
+//  gray      no hue: brightness only
+//  subshell  hue = l (s, p, d, f), chroma by depth (s included)
+//  shell     hue = n, the radial chart's shell colors, full chroma
+export const COLOR_SCHEMES = ['shape', 'gray', 'subshell', 'shell'];
+export const SCHEME_LABELS = { shape: 'Shape', gray: 'Gray', subshell: 'Subshell (s p d f)', shell: 'Shell (n)' };
+
+// URL value -> scheme ('shape' for anything unknown).
+export function schemeParam(v) { return COLOR_SCHEMES.includes(v) ? v : 'shape'; }
+
+// s red, p sky blue, d green, f violet: drawn as the renderer draws them
+// (full value, both themes) all pairs pass the dataviz palette validator's
+// CVD check (worst: d/f deutan dE 17).
+export const L_HUE = { 0: 350, 1: 200, 2: 110, 3: 270 };
+
+// Shell colors, shared with the radial chart (js/radial.js), validated there
+// on the dark panel in shell order; at the renderer's full value their hues
+// also pass the CVD check for neighbouring shells (worst n1/n2 dE 20).
+export const SHELL_COLORS = { 1: '#ca1616', 2: '#b88b05', 3: '#0f91bd', 4: '#8b6cf0', 5: '#3f9a6a', 6: '#c2569a' };
+
+function hexHue(hex) {
+  const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255);
+  const max = Math.max(r, g, b), d = max - Math.min(r, g, b);
+  if (d === 0) return 0;
+  const h = max === r ? (g - b) / d : max === g ? 2 + (b - r) / d : 4 + (r - g) / d;
+  return (h * 60 + 360) % 360;
+}
+const SHELL_HUE = Object.fromEntries(Object.entries(SHELL_COLORS).map(([n, c]) => [n, hexHue(c)]));
+
+// { hue (degrees), chroma in [0, 1] } of an orbital of `element` in `scheme`.
+export function orbitalColor(orbital, element, scheme = 'shape') {
+  switch (scheme) {
+    case 'gray': return { hue: 0, chroma: 0 };
+    case 'subshell': return { hue: L_HUE[orbital.l], chroma: depthChroma(orbital, element) };
+    case 'shell': return { hue: SHELL_HUE[orbital.n], chroma: 1 };
+    default: return { hue: orbital.hue, chroma: orbitalChroma(orbital, element) };
+  }
 }
 
 // Valence orbitals: the outermost shell plus an open (n-1)d subshell.

@@ -3,7 +3,7 @@
 
 import { ELEMENTS } from './elements.js';
 import { radialDensity } from './math.js';
-import { SUBSHELLS, orbitalsOf } from './orbitals.js';
+import { SUBSHELLS, orbitalsOf, SHELL_COLORS } from './orbitals.js';
 
 const BOHR_PM = 52.9177;
 
@@ -13,7 +13,7 @@ const BOHR_PM = 52.9177;
 //  - subshells: one series per subshell, line style = l
 //    (s solid, p dashed, d dotted, f dash-dot);
 //  - shells: one solid series per shell n (for heavy atoms).
-const SHELL_COLORS = { 1: '#ca1616', 2: '#b88b05', 3: '#0f91bd', 4: '#8b6cf0', 5: '#3f9a6a', 6: '#c2569a' };
+// SHELL_COLORS live in orbitals.js: the 'shell' color scheme uses them too.
 const L_DASH = { 0: [], 1: [6, 3], 2: [1.5, 2.5], 3: [8, 3, 1.5, 3] };
 const part = sh => ({ n: sh.n, l: sh.l, orbitals: orbitalsOf(sh.id) });
 export const SERIES = SUBSHELLS.map(sh => ({
