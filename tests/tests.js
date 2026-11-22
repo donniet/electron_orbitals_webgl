@@ -1195,8 +1195,8 @@ test('GPU depth fog: each detection dims by its depth (whole and cut), hue kept,
       if (!hasOn) { assert(on.data[i] === off.data[i], 'background unchanged'); continue; }
       n++;
       const front = cut ? 0 : r;
-      const t = Math.min(1, Math.max(0, (f32[i + 2] + r) / (front + r)));
-      const fog = 0.2 + 0.8 * t;
+      const dist = Math.min(1, Math.max(0, (front - f32[i + 2]) / (front + r)));
+      const fog = 1 - 0.8 * dist * dist;
       for (const sh of [0, 8, 16]) {
         const a = (on.data[i] >>> sh) & 255, b = (off.data[i] >>> sh) & 255;
         if (Math.abs(a - b * fog) > 1.01) bad++;
@@ -1204,7 +1204,9 @@ test('GPU depth fog: each detection dims by its depth (whole and cut), hue kept,
       if (fog < 0.9) dimmed++;
     }
     assert(n > 2000, `cut=${cut}: only ${n} detections`);
-    assert(dimmed > n / 4, `cut=${cut}: only ${dimmed}/${n} detections noticeably fogged`);
+    // Quadratic fog leaves the front nearly clear; with the cut-away most
+    // detections lie just behind the plane, so only a few are dimmed > 10%.
+    assert(dimmed > n / (cut ? 50 : 4), `cut=${cut}: only ${dimmed}/${n} detections noticeably fogged`);
     assert(bad <= n * 0.003, `cut=${cut}: ${bad} channels off the depth factor`);
   }
 });

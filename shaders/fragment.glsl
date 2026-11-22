@@ -72,10 +72,11 @@ uniform float uGamma;        // tone curve: amount = (k / uKMax)^uGamma
 uniform int   uMode;         // 0 = dark background, 1 = white background
 uniform int   uColorMode;   // 0 = blend every orbital's detections;
                              // 1 = only the orbital with the nearest detection
-// Depth fog (nearest color only): a detection's brightness falls linearly
-// with its depth from 1 at the front of the atom (+uFogRadius, or the cut
-// plane) to 1 - uFog at the back (-uFogRadius), clamped beyond. A visual
-// cue, not physics. uFog = 0: off.
+// Depth fog (nearest color only): with d the distance behind the front of
+// the atom (+uFogRadius, or the cut plane) as a fraction of the depth to
+// its back (-uFogRadius), clamped to [0, 1], a detection's brightness is
+// 1 - uFog d^2: clear in front, growing with distance squared to 1 - uFog
+// at the back. A visual cue, not physics. uFog = 0: off.
 uniform float uFog;
 uniform float uFogRadius;    // Bohr: the element's atomic radius
 
@@ -216,8 +217,8 @@ void main() {
       // Scaling chroma and total together dims the detection, keeping its
       // hue and purity; applied before the theme, so white stays the dual.
       float front = uCut != 0.0 ? 0.0 : uFogRadius;
-      float f = clamp((nearT + uFogRadius) / (front + uFogRadius), 0.0, 1.0);
-      float fog = mix(1.0 - uFog, 1.0, f);
+      float dist = clamp((front - nearT) / (front + uFogRadius), 0.0, 1.0);
+      float fog = 1.0 - uFog * dist * dist;
       chroma *= fog;
       total *= fog;
     }

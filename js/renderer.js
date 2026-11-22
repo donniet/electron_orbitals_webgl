@@ -230,8 +230,9 @@ export function createRenderer(canvas, tables) {
    *               (only the orbital with the detection nearest the viewer),
    *   visible   - boolean per orbital,
    *   fog       - depth fog strength in [0, 1] ('nearest' color; 0 = off):
-   *               brightness 1 at the front of the atom (its radius, or
-   *               the cut plane) to 1 - fog at the back,
+   *               brightness 1 - fog d^2, d the distance behind the front
+   *               of the atom (its radius, or the cut plane) as a fraction
+   *               of the depth to its back,
    *   streaks   - (prototype) in 'nearest' color, draw each detection as a
    *               short line along a momentum: false | 'global' (a sample of
    *               its orbital's momentum distribution) | 'local' (a sample of
