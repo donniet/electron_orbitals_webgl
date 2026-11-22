@@ -72,6 +72,12 @@ uniform float uGamma;        // tone curve: amount = (k / uKMax)^uGamma
 uniform int   uMode;         // 0 = dark background, 1 = white background
 uniform int   uColorMode;   // 0 = blend every orbital's detections;
                              // 1 = only the orbital with the nearest detection
+// Depth fog (nearest color only): a detection's brightness falls linearly
+// with its depth from 1 at the front of the atom (+uFogRadius, or the cut
+// plane) to 1 - uFog at the back (-uFogRadius), clamped beyond. A visual
+// cue, not physics. uFog = 0: off.
+uniform float uFog;
+uniform float uFogRadius;    // Bohr: the element's atomic radius
 
 #ifdef STREAKS
 // Momentum streaks: inverse CDF of each row's radial momentum density
@@ -206,6 +212,15 @@ void main() {
     // Only the nearest orbital's detections are shown, in its own color.
     chroma = nearChroma;
     total = nearSat;
+    if (uFog > 0.0 && nearSlot >= 0) {
+      // Scaling chroma and total together dims the detection, keeping its
+      // hue and purity; applied before the theme, so white stays the dual.
+      float front = uCut != 0.0 ? 0.0 : uFogRadius;
+      float f = clamp((nearT + uFogRadius) / (front + uFogRadius), 0.0, 1.0);
+      float fog = mix(1.0 - uFog, 1.0, f);
+      chroma *= fog;
+      total *= fog;
+    }
   }
 
   // --- Rendering: tone curve per orbital, hue compositing, then RGB.

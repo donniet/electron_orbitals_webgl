@@ -8,7 +8,7 @@
 //   z, z2               atom A and optional atom B (side by side)
 //   q=w,x,y,z | zoom    orientation quaternion and zoom (default: the app's)
 //   density, kmax, gamma, equalize=1, scale=fixed, cut=1, color=blend,
-//   streaks=local|axis|global,
+//   streaks=local|axis|global, fog=strength,
 //   overlay=0, radial=shell|subshell|compare   as in the app
 //   hide=i,j,...        orbital indices hidden (in both panes, like the app)
 // Print-page options (also in its toolbar):
@@ -79,6 +79,7 @@ const state = {
   cut: params.get('cut') === '1',
   color: params.get('color') === 'blend' ? 'blend' : 'nearest',
   streaks: streakParam(params.get('streaks')),
+  fog: Math.min(1, Math.max(0, num('fog', 0))),
   overlay: params.get('overlay') !== '0',
   radialMode: ['shell', 'subshell', 'compare'].includes(params.get('radial')) ? params.get('radial') : 'auto',
   mode: 'white',
@@ -160,6 +161,7 @@ function caption(W, H) {
     state.color === 'nearest' ? 'nearest color' : 'blended color',
   ];
   if (state.cut) parts.push('cut away: half behind the nucleus');
+  if (state.fog > 0 && state.color === 'nearest') parts.push(`depth fog ${state.fog}`);
   if (state.streaks && state.color === 'nearest') {
     parts.push({ local: 'momentum lines: local spread', axis: 'momentum lines: local main axis',
       global: 'momentum lines: whole-orbital sample' }[state.streaks]);

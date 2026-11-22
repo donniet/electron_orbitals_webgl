@@ -229,6 +229,9 @@ export function createRenderer(canvas, tables) {
    *   color    - 'blend' (every orbital's detections mixed) | 'nearest'
    *               (only the orbital with the detection nearest the viewer),
    *   visible   - boolean per orbital,
+   *   fog       - depth fog strength in [0, 1] ('nearest' color; 0 = off):
+   *               brightness 1 at the front of the atom (its radius, or
+   *               the cut plane) to 1 - fog at the back,
    *   streaks   - (prototype) in 'nearest' color, draw each detection as a
    *               short line along a momentum: false | 'global' (a sample of
    *               its orbital's momentum distribution) | 'local' (a sample of
@@ -314,6 +317,7 @@ export function createRenderer(canvas, tables) {
     gl.uniform1i(u.uMode, state.mode === 'white' ? 1 : 0);
     gl.uniform1f(u.uCut, state.cut ? -1 : 0);              // every pane
     gl.uniform1i(u.uColorMode, state.color === 'nearest' ? 1 : 0);
+    gl.uniform1f(u.uFog, state.fog ?? 0);
 
     const geos = views.map(({ element: el, visible = ALL_VISIBLE, rect }) => {
       const bw = Math.ceil(rect.w / k), bh = Math.ceil(rect.h / k);
@@ -329,6 +333,7 @@ export function createRenderer(canvas, tables) {
       // the native view.
       gl.uniform2f(u.uNdcScale, (bw * k) / rect.w, (bh * k) / rect.h);
       gl.uniform2f(u.uHalfExtent, geo.halfExtent[0], geo.halfExtent[1]);
+      gl.uniform1f(u.uFogRadius, geo.radius);
       gl.uniform1i(u.uCount, count);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       geo.gains = gains;

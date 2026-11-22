@@ -15,6 +15,7 @@
 //   ?spin=0       start without the slow default rotation
 //   ?res=full     noise canvas resolution: auto (default) | full | half
 //   ?kmax=4       counts for full brightness
+//   ?fog=0.6      depth fog on, at this strength (nearest color)
 //   ?gamma=0.5    tone gamma
 //   ?record=1     open the video recording controls
 
@@ -54,6 +55,9 @@ const state = {
   radialMode: 'auto',            // 'auto' | 'shell' | 'subshell'
   spin: defaultSpin(),           // { axis, rate } in view space, or null
   kMax: +params.get('kmax') || 4,
+  fogOn: +params.get('fog') > 0,             // depth fog (nearest color)
+  fogStrength: Math.min(1, +params.get('fog') || 0.6),
+  get fog() { return this.fogOn ? this.fogStrength : 0; },   // what the renderer reads
   gamma: +params.get('gamma') || 0.5,
   mode: params.get('mode') === 'white' ? 'white' : 'dark',
   visible: ORBITALS.map(() => true),
@@ -181,6 +185,8 @@ const app = {
   setCut(b) { state.cut = b; syncControls(state); dirty = true; },
   setColor(m) { state.color = m; syncControls(state); dirty = true; },
   setStreaks(m) { state.streaks = m; syncControls(state); dirty = true; },
+  setFog(on) { state.fogOn = on; syncControls(state); dirty = true; },
+  setFogStrength(s) { state.fogStrength = s; syncControls(state); dirty = true; },
   setRadialMode(m) { state.radialMode = m; radialKey = ''; syncRadialButtons(); dirty = true; },
   setMode(m) { state.mode = m; syncControls(state); dirty = true; },
   setPaused(p) { state.paused = p; syncControls(state); },
@@ -257,6 +263,7 @@ function printParams(s) {
   if (s.cut) p.set('cut', '1');
   if (s.color !== 'nearest') p.set('color', s.color);
   if (s.streaks) p.set('streaks', s.streaks);
+  if (s.fogOn) p.set('fog', s.fogStrength);
   if (!s.overlay) p.set('overlay', '0');
   if (s.radialMode !== 'auto') p.set('radial', s.radialMode);
   const hidden = s.visible.flatMap((v, i) => (v ? [] : [i]));

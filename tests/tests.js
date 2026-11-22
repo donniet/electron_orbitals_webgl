@@ -477,7 +477,7 @@ function renderFrame(z, opts = {}) {
     seed: opts.seed ?? 1, density: opts.density ?? 0.3,
     equalize: opts.equalize ?? false, kMax: opts.kMax ?? 4, gamma: opts.gamma ?? 0.5,
     mode: opts.mode || 'dark', visible: opts.visible || ORBITALS.map(() => true), fixedScale: opts.fixedScale ?? false,
-    cut: opts.cut ?? false, color: opts.color || 'blend', streaks: opts.streaks ?? false,
+    cut: opts.cut ?? false, color: opts.color || 'blend', streaks: opts.streaks ?? false, fog: opts.fog ?? 0,
   };
   r.render(state, opts.k ?? 1);
   const px = new Uint8Array(256 * 256 * 4);
@@ -1173,10 +1173,61 @@ await testAsync('app: Momentum row follows the URL, needs nearest color, m cycle
   f.remove();
 });
 
-await testAsync('print page: momentum lines carried in the URL and named in the caption', async () => {
-  const f = await loadFrame('../print.html?z=5&seed=7&paper=letter&grain=4&streaks=axis');
+await testAsync('print page: momentum lines and depth fog carried in the URL and named in the caption', async () => {
+  const f = await loadFrame('../print.html?z=5&seed=7&paper=letter&grain=4&streaks=axis&fog=0.5');
   const cap = f.contentDocument.getElementById('caption').textContent;
-  assert(cap.includes('momentum lines: local main axis'), `caption: ${cap}`);
+  assert(cap.includes('momentum lines: local main axis') && cap.includes('depth fog 0.5'), `caption: ${cap}`);
+  f.remove();
+});
+
+test('GPU depth fog: each detection dims by its depth (whole and cut), hue kept, nothing else changes', () => {
+  const el = ELEMENTS[9];                                        // Ne
+  const r = viewGeometry(el, 256, 256, 1).radius;
+  for (const cut of [false, true]) {
+    const opts = { color: 'nearest', streaks: 'axis', seed: 3, q: STREAK_Q, density: 0.5, cut, withDetections: true };
+    const off = renderFrame(10, opts).det, on = renderFrame(10, { ...opts, fog: 0.8 }).det;
+    const f32 = new Float32Array(on.data.buffer);
+    let n = 0, bad = 0, dimmed = 0;
+    for (let i = 0; i < on.data.length; i += 4) {
+      const hasOn = on.data[i] >>> 24, hasOff = off.data[i] >>> 24;
+      assert(hasOn === hasOff && on.data[i + 2] === off.data[i + 2] && on.data[i + 1] === off.data[i + 1],
+        'detections, depths and streaks unchanged');
+      if (!hasOn) { assert(on.data[i] === off.data[i], 'background unchanged'); continue; }
+      n++;
+      const front = cut ? 0 : r;
+      const t = Math.min(1, Math.max(0, (f32[i + 2] + r) / (front + r)));
+      const fog = 0.2 + 0.8 * t;
+      for (const sh of [0, 8, 16]) {
+        const a = (on.data[i] >>> sh) & 255, b = (off.data[i] >>> sh) & 255;
+        if (Math.abs(a - b * fog) > 1.01) bad++;
+      }
+      if (fog < 0.9) dimmed++;
+    }
+    assert(n > 2000, `cut=${cut}: only ${n} detections`);
+    assert(dimmed > n / 4, `cut=${cut}: only ${dimmed}/${n} detections noticeably fogged`);
+    assert(bad <= n * 0.003, `cut=${cut}: ${bad} channels off the depth factor`);
+  }
+});
+
+await testAsync('app: Depth fog follows the URL, needs nearest color, f toggles', async () => {
+  const f = document.createElement('iframe');
+  f.style.cssText = 'position:absolute;left:-10000px;width:1400px;height:1000px';
+  f.src = '../index.html?z=5&paused=1&spin=0&fog=0.5';
+  document.body.append(f);
+  const q = sel => f.contentDocument?.querySelector(sel);
+  const t0 = performance.now();
+  while (!q('#fog')?.checked) {
+    if (performance.now() - t0 > 60000) throw new Error('app did not load');
+    await new Promise(res => setTimeout(res, 50));
+  }
+  assert(q('#fog-strength').value === '0.5' && q('#fog-val').textContent === '0.50', 'strength from URL');
+  const key = k => f.contentWindow.dispatchEvent(new f.contentWindow.KeyboardEvent('keydown', { key: k }));
+  key('f');
+  assert(!q('#fog').checked && q('#fog-strength').disabled, 'f: off');
+  q('input[name=colormode][value=blend]').click();
+  assert(q('#fog').disabled, 'blend disables');
+  key('f');
+  assert(q('#fog').checked && q('input[name=colormode][value=nearest]').checked, 'f: on, back to nearest');
   f.remove();
 });
 

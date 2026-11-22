@@ -93,6 +93,9 @@ export function buildUI(app) {
   for (const r of document.querySelectorAll('input[name=streakmode]')) {
     r.addEventListener('change', () => r.checked && app.setStreaks(r.value === 'off' ? false : r.value));
   }
+  $('#fog').addEventListener('change', e => app.setFog(e.target.checked));
+  const fogStrength = $('#fog-strength');
+  fogStrength.addEventListener('input', () => app.setFogStrength(+fogStrength.value));
   for (const r of document.querySelectorAll('input[name=bgmode]')) {
     r.addEventListener('change', () => r.checked && app.setMode(r.value));
   }
@@ -122,6 +125,11 @@ export function buildUI(app) {
     else if (e.key === 'p') app.openPrintPage();
     else if (e.key === 'c') app.setCut(!app.state.cut);
     else if (e.key === 'n') app.setColor(app.state.color === 'nearest' ? 'blend' : 'nearest');
+    else if (e.key === 'f') {
+      // depth fog needs nearest color
+      if (!app.state.fogOn && app.state.color !== 'nearest') app.setColor('nearest');
+      app.setFog(!app.state.fogOn);
+    }
     else if (e.key === 'm') {
       // off -> local -> axis -> off (momentum lines need nearest color)
       const next = { local: 'axis', axis: false }[app.state.streaks] ?? 'local';
@@ -175,6 +183,13 @@ export function syncControls(state) {
     r.disabled = !nearest;
   }
   $('#streak-row').classList.toggle('disabled', !nearest);
+  // Depth fog likewise (a blended pixel has no single depth).
+  $('#fog').checked = state.fogOn;
+  $('#fog').disabled = !nearest;
+  $('#fog-strength').value = state.fogStrength;
+  $('#fog-strength').disabled = !nearest || !state.fogOn;
+  $('#fog-val').textContent = state.fogStrength.toFixed(2);
+  $('#fog-row').classList.toggle('disabled', !nearest);
   $('#streak-note').hidden = !(nearest && state.streaks);
   for (const r of document.querySelectorAll('input[name=bgmode]')) r.checked = r.value === state.mode;
   for (const r of document.querySelectorAll('input[name=resmode]')) r.checked = r.value === state.resMode;
