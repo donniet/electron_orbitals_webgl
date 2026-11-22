@@ -230,7 +230,7 @@ export function createRenderer(canvas, tables) {
    *               (only the orbital with the detection nearest the viewer),
    *   visible   - boolean per orbital,
    *   fog       - depth fog strength in [0, 1] ('nearest' color; 0 = off):
-   *               brightness 1 - fog d^2, d the distance behind the front
+   *               brightness exp(-(3 fog d)^2), d the distance behind the front
    *               of the atom (its radius, or the cut plane) as a fraction
    *               of the depth to its back,
    *   streaks   - (prototype) in 'nearest' color, draw each detection as a

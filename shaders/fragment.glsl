@@ -75,10 +75,12 @@ uniform int   uColorMode;   // 0 = blend every orbital's detections;
 // Depth fog (nearest color only): with d the distance behind the front of
 // the atom (+uFogRadius, or the cut plane) as a fraction of the depth to
 // its back (-uFogRadius), clamped to [0, 1], a detection's brightness is
-// 1 - uFog d^2: clear in front, growing with distance squared to 1 - uFog
-// at the back. A visual cue, not physics. uFog = 0: off.
+// exp(-(FOG_SCALE uFog d)^2) (Gaussian, like GL's EXP2 fog): clear in
+// front, falling off with distance squared, to exp(-(3 uFog)^2) at the back
+// (0.04 at the default 0.6). A visual cue, not physics. uFog = 0: off.
 uniform float uFog;
 uniform float uFogRadius;    // Bohr: the element's atomic radius
+const float FOG_SCALE = 3.0; // uFog = 1: e^-9 at the back
 
 #ifdef STREAKS
 // Momentum streaks: inverse CDF of each row's radial momentum density
@@ -218,7 +220,8 @@ void main() {
       // hue and purity; applied before the theme, so white stays the dual.
       float front = uCut != 0.0 ? 0.0 : uFogRadius;
       float dist = clamp((front - nearT) / (front + uFogRadius), 0.0, 1.0);
-      float fog = 1.0 - uFog * dist * dist;
+      float k = FOG_SCALE * uFog * dist;
+      float fog = exp(-k * k);
       chroma *= fog;
       total *= fog;
     }
