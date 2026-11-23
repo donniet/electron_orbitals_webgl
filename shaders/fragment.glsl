@@ -18,14 +18,14 @@
 //                 (nearest color), see uPalette
 //   NUM_ROWS      (with STREAKS or PALETTES) number of radial table rows
 #ifndef NUM_ORBITALS
-#error NUM_ORBITALS must be defined by the host (createProgram defines)
+#error NUM_ORBITALS must be defined by the host
 #endif
 // The nearest detection's 3-D point and the local momentum spread there are
 // needed only by streaks and the per-detection palettes.
 #if defined(STREAKS) || defined(PALETTES)
 #define NEAR_POINT
 #ifndef NUM_ROWS
-#error NUM_ROWS must be defined by the host (createProgram defines)
+#error NUM_ROWS must be defined by the host
 #endif
 #endif
 
